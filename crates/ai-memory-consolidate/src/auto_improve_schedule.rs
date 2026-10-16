@@ -1002,7 +1002,7 @@ mod tests {
                     id: session_id,
                     workspace_id: ws,
                     project_id: project,
-                    agent_kind: ai_memory_core::AgentKind::OpenCode,
+                    agent_kind: ai_memory_core::AgentKind::Other,
                     cwd: None,
                     actor_user: None,
                 })
@@ -1134,7 +1134,7 @@ mod tests {
                     id: before_startup_init,
                     workspace_id: ws,
                     project_id,
-                    agent_kind: AgentKind::OpenCode,
+                    agent_kind: AgentKind::Other,
                     cwd: None,
                     actor_user: None,
                 })
@@ -1165,7 +1165,7 @@ mod tests {
                     id: session_id,
                     workspace_id: ws,
                     project_id,
-                    agent_kind: AgentKind::OpenCode,
+                    agent_kind: AgentKind::Other,
                     cwd: None,
                     actor_user: None,
                 })
@@ -1303,7 +1303,7 @@ mod tests {
                     id: session_id,
                     workspace_id: ws,
                     project_id: project,
-                    agent_kind: ai_memory_core::AgentKind::OpenCode,
+                    agent_kind: ai_memory_core::AgentKind::Other,
                     cwd: None,
                     actor_user: None,
                 })
@@ -1430,7 +1430,7 @@ mod tests {
                 id: session_id,
                 workspace_id: ws,
                 project_id: project,
-                agent_kind: ai_memory_core::AgentKind::OpenCode,
+                agent_kind: ai_memory_core::AgentKind::Other,
                 cwd: None,
                 actor_user: None,
             })

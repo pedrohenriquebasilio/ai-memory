@@ -445,7 +445,7 @@ async fn project_search_shows_observation_excerpts_only_to_the_sessions_owner() 
             id: session_id,
             workspace_id: ws,
             project_id: f.alpha,
-            agent_kind: AgentKind::Codex,
+            agent_kind: AgentKind::Other,
             cwd: None,
             actor_user: Some(ai_memory_core::IdentityKey::User("alice".into()).storage_key()),
         })
@@ -925,7 +925,7 @@ async fn kind_and_tier_filters_hold_in_every_stream() {
             id: session_id,
             workspace_id: ws,
             project_id: f.alpha,
-            agent_kind: AgentKind::Codex,
+            agent_kind: AgentKind::Other,
             cwd: None,
             actor_user: None,
         })

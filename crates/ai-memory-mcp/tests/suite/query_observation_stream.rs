@@ -87,7 +87,7 @@ async fn seed_session(
             id: session_id,
             workspace_id: ws,
             project_id: proj,
-            agent_kind: AgentKind::ClaudeCode,
+            agent_kind: AgentKind::Other,
             cwd: Some("/repo".into()),
             actor_user: None,
         })

@@ -303,7 +303,7 @@ fn resolve_target(
     if entry.scope == AgentAssetScope::Project {
         return Ok((cwd.to_path_buf(), cwd.join(&entry.target_relative)));
     }
-    if entry.agent == AgentKind::ClaudeDesktop {
+    if entry.agent == AgentKind::Other {
         if entry.target_relative != ".claude/claude_desktop_config.json" {
             bail!(
                 "Claude Desktop asset has unexpected destination {:?}",
@@ -317,7 +317,7 @@ fn resolve_target(
             .to_path_buf();
         return Ok((base, target));
     }
-    if entry.agent == AgentKind::OpenCode
+    if entry.agent == AgentKind::Other
         && let Some(relative) = entry.target_relative.strip_prefix(".config/opencode/")
     {
         let config = crate::commands::install_mcp::mcp_config_path(McpClient::OpenCode)?;
@@ -327,7 +327,7 @@ fn resolve_target(
             .to_path_buf();
         return Ok((base.clone(), base.join(relative)));
     }
-    if entry.agent == AgentKind::ClaudeCode
+    if entry.agent == AgentKind::Other
         && let Some(custom_dir) = claude_override
         && let Some(relative) = entry.target_relative.strip_prefix(".claude/")
     {

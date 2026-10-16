@@ -114,7 +114,7 @@ async fn harness_with_two_sessions() -> Harness {
                 id: session_id,
                 workspace_id: ws,
                 project_id: proj,
-                agent_kind: ai_memory_core::AgentKind::OpenCode,
+                agent_kind: ai_memory_core::AgentKind::Other,
                 cwd: None,
                 actor_user: None,
             })

@@ -396,7 +396,7 @@ mod tests {
                 session_id.as_bytes(),
                 workspace_id.as_bytes(),
                 project_id.as_bytes(),
-                AgentKind::Codex.as_str(),
+                AgentKind::Other.as_str(),
                 jiff::Timestamp::now().as_microsecond(),
             ],
         )
@@ -474,7 +474,7 @@ mod tests {
                 session_id.as_bytes(),
                 workspace_id.as_bytes(),
                 project_id.as_bytes(),
-                AgentKind::Codex.as_str(),
+                AgentKind::Other.as_str(),
             ],
         )
         .unwrap();
@@ -486,7 +486,7 @@ mod tests {
                 handoff_id.as_bytes(),
                 workspace_id.as_bytes(),
                 project_id.as_bytes(),
-                AgentKind::Codex.as_str(),
+                AgentKind::Other.as_str(),
                 "legacy baton",
             ],
         )
@@ -561,7 +561,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             preserved,
-            ("codex".into(), "/repo".into(), 7, Some("user:alice".into()))
+            ("other".into(), "/repo".into(), 7, Some("user:alice".into()))
         );
 
         for index in [
@@ -602,7 +602,7 @@ mod tests {
                 id: SessionId::new(),
                 workspace_id,
                 project_id,
-                agent_kind: AgentKind::Hermes,
+                agent_kind: AgentKind::Other,
                 cwd: Some("/repo".into()),
                 actor_user: Some("user:alice".into()),
             },
@@ -646,12 +646,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             preserved,
-            (
-                "hermes".into(),
-                "/repo".into(),
-                7,
-                Some("user:alice".into())
-            )
+            ("other".into(), "/repo".into(), 7, Some("user:alice".into()))
         );
 
         crate::ops::begin_session(
@@ -661,7 +656,7 @@ mod tests {
                 id: SessionId::new(),
                 workspace_id,
                 project_id,
-                agent_kind: AgentKind::KiroCli,
+                agent_kind: AgentKind::Other,
                 cwd: Some("/repo".into()),
                 actor_user: Some("user:alice".into()),
             },
@@ -719,12 +714,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             preserved,
-            (
-                "kiro-cli".into(),
-                "/repo".into(),
-                7,
-                Some("user:alice".into())
-            )
+            ("other".into(), "/repo".into(), 7, Some("user:alice".into()))
         );
 
         crate::ops::begin_session(
@@ -734,7 +724,7 @@ mod tests {
                 id: SessionId::new(),
                 workspace_id,
                 project_id,
-                agent_kind: AgentKind::CommandCode,
+                agent_kind: AgentKind::Other,
                 cwd: Some("/repo".into()),
                 actor_user: Some("user:alice".into()),
             },
@@ -792,12 +782,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             preserved,
-            (
-                "command-code".into(),
-                "/repo".into(),
-                7,
-                Some("user:alice".into())
-            )
+            ("other".into(), "/repo".into(), 7, Some("user:alice".into()))
         );
 
         crate::ops::begin_session(
@@ -807,7 +792,7 @@ mod tests {
                 id: SessionId::new(),
                 workspace_id,
                 project_id,
-                agent_kind: AgentKind::Pool,
+                agent_kind: AgentKind::Other,
                 cwd: Some("/repo".into()),
                 actor_user: Some("user:alice".into()),
             },
@@ -865,7 +850,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             preserved,
-            ("pool".into(), "/repo".into(), 7, Some("user:alice".into()))
+            ("other".into(), "/repo".into(), 7, Some("user:alice".into()))
         );
 
         crate::ops::begin_session(
@@ -875,7 +860,7 @@ mod tests {
                 id: SessionId::new(),
                 workspace_id,
                 project_id,
-                agent_kind: AgentKind::Zcode,
+                agent_kind: AgentKind::Other,
                 cwd: Some("/repo".into()),
                 actor_user: Some("user:alice".into()),
             },
@@ -966,7 +951,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             preserved,
-            ("zcode".into(), "/repo".into(), 7, Some("user:alice".into()))
+            ("other".into(), "/repo".into(), 7, Some("user:alice".into()))
         );
 
         crate::ops::begin_session(
@@ -976,7 +961,7 @@ mod tests {
                 id: SessionId::new(),
                 workspace_id,
                 project_id,
-                agent_kind: AgentKind::Grizzybot,
+                agent_kind: AgentKind::Other,
                 cwd: Some("/repo".into()),
                 actor_user: Some("user:alice".into()),
             },
@@ -1034,12 +1019,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             preserved,
-            (
-                "grizzybot".into(),
-                "/repo".into(),
-                7,
-                Some("user:alice".into())
-            )
+            ("other".into(), "/repo".into(), 7, Some("user:alice".into()))
         );
 
         crate::ops::begin_session(
@@ -1049,7 +1029,7 @@ mod tests {
                 id: SessionId::new(),
                 workspace_id,
                 project_id,
-                agent_kind: AgentKind::CopilotCli,
+                agent_kind: AgentKind::Other,
                 cwd: Some("/repo".into()),
                 actor_user: Some("user:alice".into()),
             },
@@ -1115,12 +1095,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             preserved,
-            (
-                "copilot-cli".into(),
-                "/repo".into(),
-                7,
-                Some("user:alice".into())
-            )
+            ("other".into(), "/repo".into(), 7, Some("user:alice".into()))
         );
         let dangling: i64 = conn
             .query_row(
@@ -1138,7 +1113,7 @@ mod tests {
                 id: SessionId::new(),
                 workspace_id,
                 project_id,
-                agent_kind: AgentKind::Droid,
+                agent_kind: AgentKind::Other,
                 cwd: Some("/repo".into()),
                 actor_user: Some("user:alice".into()),
             },
@@ -1232,7 +1207,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             preserved,
-            ("droid".into(), "/repo".into(), 7, Some("user:alice".into()))
+            ("other".into(), "/repo".into(), 7, Some("user:alice".into()))
         );
         let observations: i64 = conn
             .query_row(
@@ -1260,7 +1235,7 @@ mod tests {
                 id: SessionId::new(),
                 workspace_id,
                 project_id,
-                agent_kind: AgentKind::Muse,
+                agent_kind: AgentKind::Other,
                 cwd: Some("/repo".into()),
                 actor_user: Some("user:alice".into()),
             },
@@ -1354,7 +1329,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             preserved,
-            ("muse".into(), "/repo".into(), 7, Some("user:alice".into()))
+            ("other".into(), "/repo".into(), 7, Some("user:alice".into()))
         );
         let observations: i64 = conn
             .query_row(
@@ -1382,7 +1357,7 @@ mod tests {
                 id: SessionId::new(),
                 workspace_id,
                 project_id,
-                agent_kind: AgentKind::CodeBuddy,
+                agent_kind: AgentKind::Other,
                 cwd: Some("/repo".into()),
                 actor_user: Some("user:alice".into()),
             },
@@ -1467,11 +1442,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             preserved,
-            (
-                "codebuddy".into(),
-                "/repo".into(),
-                Some("user:alice".into())
-            )
+            ("other".into(), "/repo".into(), Some("user:alice".into()))
         );
         let observations: i64 = conn
             .query_row(
@@ -1489,7 +1460,7 @@ mod tests {
                 id: SessionId::new(),
                 workspace_id,
                 project_id,
-                agent_kind: AgentKind::IbmBob,
+                agent_kind: AgentKind::Other,
                 cwd: Some("/repo".into()),
                 actor_user: Some("user:alice".into()),
             },
@@ -1567,7 +1538,7 @@ mod tests {
                 },
             )
             .unwrap();
-        assert_eq!(preserved, ("codex".into(), 3, 7, None, None));
+        assert_eq!(preserved, ("other".into(), 3, 7, None, None));
         conn.execute(
             "UPDATE managed_runs SET previous_agent_kind = 'claude-code', \
              previous_native_session_id = 'native-1' WHERE id = ?1",

@@ -5166,7 +5166,7 @@ mod tests {
                 id: sid,
                 workspace_id: ws,
                 project_id: src,
-                agent_kind: AgentKind::Codex,
+                agent_kind: AgentKind::Other,
                 cwd: None,
                 actor_user: None,
             })

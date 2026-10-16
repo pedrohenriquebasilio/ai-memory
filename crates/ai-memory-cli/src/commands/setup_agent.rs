@@ -987,40 +987,6 @@ mod tests {
     }
 
     #[test]
-    fn devin_setup_copies_event_scripts_and_shared_lib() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let source_root = tmp.path().join("source");
-        let source_devin = source_root.join("devin");
-        fs::create_dir_all(&source_devin).unwrap();
-        fs::write(
-            source_devin.join("session-start.sh"),
-            "#!/bin/sh\n. \"$(dirname \"$0\")/../_lib.sh\"\n",
-        )
-        .unwrap();
-        fs::write(
-            source_root.join("_lib.sh"),
-            "ai_memory_json_string() { cat; }\n",
-        )
-        .unwrap();
-
-        let dest = tmp.path().join("dest");
-        let args = SetupAgentArgs {
-            agent: AgentChoice::Devin,
-            opencode_dialect: None,
-            to: dest.clone(),
-            host_prefix: None,
-            server_url: "http://127.0.0.1:49374".into(),
-            auth_token: None,
-            source: Some(source_root),
-        };
-
-        run(&Config::default(), args).unwrap();
-
-        assert!(dest.join("devin/session-start.sh").exists());
-        assert!(dest.join("_lib.sh").exists());
-    }
-
-    #[test]
     fn manual_script_paths_use_agent_specific_events() {
         let root = Path::new("/hooks/gemini-cli");
         let paths = event_script_paths(root, &[GEMINI_PROFILE.events]);

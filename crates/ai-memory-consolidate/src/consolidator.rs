@@ -3773,20 +3773,20 @@ mod tests {
             relations: Relations::default(),
         };
         let session_id = SessionId::new();
-        let frontmatter = build_frontmatter(&page, session_id, AgentKind::Codex);
+        let frontmatter = build_frontmatter(&page, session_id, AgentKind::Other);
         assert_eq!(
             frontmatter["summary"],
             "Bounded the queue so backpressure is testable."
         );
         assert_eq!(frontmatter["session_id"], session_id.to_string());
-        assert_eq!(frontmatter["agent"], "codex");
+        assert_eq!(frontmatter["agent"], "other");
 
         let unusable = ConsolidatedPage {
             summary: Some("- **session_id:** `9f2c`".into()),
             ..page
         };
         assert!(
-            build_frontmatter(&unusable, SessionId::new(), AgentKind::Codex)
+            build_frontmatter(&unusable, SessionId::new(), AgentKind::Other)
                 .get("summary")
                 .is_none()
         );
@@ -3825,7 +3825,7 @@ mod tests {
                 contradicts: vec![],
             },
         };
-        let fm = build_frontmatter(&page, SessionId::new(), AgentKind::ClaudeCode);
+        let fm = build_frontmatter(&page, SessionId::new(), AgentKind::Other);
         let relations = fm["relations"].as_object().unwrap();
         assert_eq!(relations.len(), 1, "{relations:?}");
         assert_eq!(relations["fixes"][0], "gotchas/g.md");
@@ -3986,7 +3986,7 @@ mod tests {
             summary: None,
             relations: Relations::default(),
         };
-        let fm = build_frontmatter(&page, SessionId::new(), AgentKind::ClaudeCode);
+        let fm = build_frontmatter(&page, SessionId::new(), AgentKind::Other);
         assert!(fm.get("relations").is_none());
     }
 
@@ -4287,7 +4287,7 @@ mod tests {
         let now = 1_700_000_000_000_i64;
         conn.execute(
             "INSERT INTO sessions (id, workspace_id, project_id, agent_kind, cwd, started_at) \
-             VALUES (?1, ?2, ?3, 'claude-code', ?4, ?5)",
+             VALUES (?1, ?2, ?3, 'cursor', ?4, ?5)",
             rusqlite::params![
                 session.as_bytes(),
                 ws.as_bytes(),
@@ -4884,7 +4884,7 @@ mod tests {
             let stored = wiki.read_page(ws, proj, &path).unwrap();
             assert_eq!(stored.frontmatter["session_id"], session.to_string());
             assert_eq!(
-                stored.frontmatter["agent"], "claude-code",
+                stored.frontmatter["agent"], "cursor",
                 "origin comes from sessions.agent_kind, never the requesting actor"
             );
         }
@@ -4986,7 +4986,7 @@ mod tests {
             .read_page(ws, proj, &PagePath::new(session_path).unwrap())
             .unwrap();
         assert_eq!(session_page.frontmatter["session_id"], session.to_string());
-        assert_eq!(session_page.frontmatter["agent"], "claude-code");
+        assert_eq!(session_page.frontmatter["agent"], "cursor");
 
         let concept = wiki
             .read_page(ws, proj, &PagePath::new("concepts/queue.md").unwrap())

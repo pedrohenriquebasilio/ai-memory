@@ -109,7 +109,7 @@ async fn session(store: &Store, ws: WorkspaceId, proj: ProjectId, n: u8, body: &
             id,
             workspace_id: ws,
             project_id: proj,
-            agent_kind: AgentKind::ClaudeCode,
+            agent_kind: AgentKind::Other,
             cwd: None,
             actor_user: None,
         })

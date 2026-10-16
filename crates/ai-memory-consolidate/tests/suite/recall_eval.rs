@@ -476,7 +476,7 @@ async fn raw_observation_fallback_recovers_detail_when_wiki_misses() {
             id: session_id,
             workspace_id: ws,
             project_id: proj,
-            agent_kind: AgentKind::OpenCode,
+            agent_kind: AgentKind::Other,
             cwd: None,
             actor_user: None,
         })
@@ -560,7 +560,7 @@ async fn profile_recall_across_projects() {
                 id: session_id,
                 workspace_id: ws,
                 project_id: proj,
-                agent_kind: AgentKind::ClaudeCode,
+                agent_kind: AgentKind::Other,
                 cwd: None,
                 actor_user: None,
             })

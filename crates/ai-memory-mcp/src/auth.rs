@@ -1766,7 +1766,7 @@ mod tests {
                     repo_fingerprint: "repo".into(),
                     worktree_fingerprint: "tree".into(),
                     cwd: "/repo".into(),
-                    agent: ai_memory_core::AgentKind::Codex,
+                    agent: ai_memory_core::AgentKind::Other,
                     automatic_harness: false,
                     available_agents: Vec::new(),
                     selection: ai_memory_store::WorkstreamSelection::New(name.into()),
@@ -1824,7 +1824,7 @@ mod tests {
 
     fn owner_finish_events() -> serde_json::Value {
         serde_json::json!([{
-            "event_id": "owner-finish-event", "agent": "codex", "native_session_id": "native-owner",
+            "event_id": "owner-finish-event", "agent": "other", "native_session_id": "native-owner",
             "kind": "message", "role": "assistant", "content": "owner finish evidence",
             "metadata": {"actor_user": "alice", "owner_user": "user:alice", "is_root": true}
         }])
@@ -1850,7 +1850,7 @@ mod tests {
                         serde_json::json!({
                             "workspace": "finish-compat", "project": "restricted", "cwd": "/repo",
                             "repo_fingerprint": "compat-repo", "worktree_fingerprint": name,
-                            "agent": "codex", "new_workstream": name, "lease_owner": "display-only"
+                            "agent": "other", "new_workstream": name, "lease_owner": "display-only"
                         })
                         .to_string(),
                     ))
@@ -1911,7 +1911,7 @@ mod tests {
         for invalid in [true, false] {
             let mut events = owner_finish_events();
             if invalid {
-                events[0]["agent"] = serde_json::json!("claude-code");
+                events[0]["agent"] = serde_json::json!("other");
             }
             let response = http.clone().oneshot(
                 Request::builder().method("POST").uri(format!("/workstream/runs/{}/finish", run.run_id))
@@ -2247,7 +2247,7 @@ mod tests {
         );
         let before = owner_finish_snapshot(&store).await;
         let mut invalid = owner_finish_events();
-        invalid[0]["agent"] = serde_json::json!("claude-code");
+        invalid[0]["agent"] = serde_json::json!("other");
         let response =
             owner_finish_request(&http, run.run_id, Some(&bob_token), invalid, true).await;
         assert_eq!(

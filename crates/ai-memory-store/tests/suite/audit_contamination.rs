@@ -40,14 +40,14 @@ fn seed(db_path: &std::path::Path) {
     // CHECK A: session landed in proj-a but its cwd is under proj-b's repo_path.
     conn.execute(
         "INSERT INTO sessions (id, workspace_id, project_id, agent_kind, cwd, started_at) \
-         VALUES (?1, ?2, ?3, 'claude-code', ?4, ?5)",
+         VALUES (?1, ?2, ?3, 'cursor', ?4, ?5)",
         params![&sess_wrong[..], &ws[..], &a[..], "/w/b/sub", now],
     )
     .unwrap();
     // Clean: session in proj-b, cwd under proj-b → resolves to its own bucket.
     conn.execute(
         "INSERT INTO sessions (id, workspace_id, project_id, agent_kind, cwd, started_at) \
-         VALUES (?1, ?2, ?3, 'claude-code', ?4, ?5)",
+         VALUES (?1, ?2, ?3, 'cursor', ?4, ?5)",
         params![&sess_clean[..], &ws[..], &b[..], "/w/b", now],
     )
     .unwrap();
@@ -127,7 +127,7 @@ async fn audit_clean_db_returns_no_findings() {
     .unwrap();
     conn.execute(
         "INSERT INTO sessions (id, workspace_id, project_id, agent_kind, cwd, started_at) \
-         VALUES (?1, ?2, ?3, 'claude-code', '/w/p', ?4)",
+         VALUES (?1, ?2, ?3, 'cursor', '/w/p', ?4)",
         params![&s[..], &ws[..], &p[..], now],
     )
     .unwrap();
@@ -165,7 +165,7 @@ async fn audit_ignores_home_repo_path_when_home_is_provided() {
     .unwrap();
     conn.execute(
         "INSERT INTO sessions (id, workspace_id, project_id, agent_kind, cwd, started_at) \
-         VALUES (?1, ?2, ?3, 'claude-code', '/home/tester/projects/app', ?4)",
+         VALUES (?1, ?2, ?3, 'cursor', '/home/tester/projects/app', ?4)",
         params![&session[..], &ws[..], &app_proj[..], now],
     )
     .unwrap();
@@ -214,7 +214,7 @@ async fn audit_prefix_paths_treat_percent_and_underscore_literally() {
     }
     conn.execute(
         "INSERT INTO sessions (id, workspace_id, project_id, agent_kind, cwd, started_at) \
-         VALUES (?1, ?2, ?3, 'claude-code', ?4, ?5)",
+         VALUES (?1, ?2, ?3, 'cursor', ?4, ?5)",
         params![
             &wrong_session[..],
             &ws[..],
@@ -226,7 +226,7 @@ async fn audit_prefix_paths_treat_percent_and_underscore_literally() {
     .unwrap();
     conn.execute(
         "INSERT INTO sessions (id, workspace_id, project_id, agent_kind, cwd, started_at) \
-         VALUES (?1, ?2, ?3, 'claude-code', ?4, ?5)",
+         VALUES (?1, ?2, ?3, 'cursor', ?4, ?5)",
         params![
             &clean_session[..],
             &ws[..],
@@ -238,7 +238,7 @@ async fn audit_prefix_paths_treat_percent_and_underscore_literally() {
     .unwrap();
     conn.execute(
         "INSERT INTO sessions (id, workspace_id, project_id, agent_kind, cwd, started_at) \
-         VALUES (?1, ?2, ?3, 'claude-code', ?4, ?5)",
+         VALUES (?1, ?2, ?3, 'cursor', ?4, ?5)",
         params![
             &sibling_session[..],
             &ws[..],

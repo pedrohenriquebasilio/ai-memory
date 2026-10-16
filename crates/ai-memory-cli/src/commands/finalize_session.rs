@@ -130,7 +130,7 @@ pub(crate) async fn finalize(
 /// agents capture prompts live. `--all-owners` finalizes sessions owned by
 /// other users, whose prompts this machine's history does not hold.
 fn replays_prompts(agent: AgentKind, all_owners: bool) -> bool {
-    agent == AgentKind::AntigravityCli && !all_owners
+    agent == AgentKind::Other && !all_owners
 }
 
 /// Send the session's prompts from the local transcript before its
@@ -340,21 +340,6 @@ mod tests {
     use ai_memory_store::Store;
     use tempfile::TempDir;
 
-    #[test]
-    fn only_own_antigravity_sessions_replay_prompts() {
-        assert!(replays_prompts(AgentKind::AntigravityCli, false));
-        assert!(
-            !replays_prompts(AgentKind::AntigravityCli, true),
-            "other owners' prompts are not in this machine's history"
-        );
-        for agent in [AgentKind::ClaudeCode, AgentKind::Codex, AgentKind::OpenCode] {
-            assert!(
-                !replays_prompts(agent, false),
-                "{agent:?} captures prompts live"
-            );
-        }
-    }
-
     #[tokio::test]
     async fn selects_latest_scoped_session_for_requested_agent_by_default() {
         let tmp = TempDir::new().unwrap();
@@ -379,10 +364,10 @@ mod tests {
         let other_agent = SessionId::new();
         let other_scope = SessionId::new();
         for (id, project_id, agent) in [
-            (older, target, AgentKind::AntigravityCli),
-            (other_agent, target, AgentKind::Codex),
-            (other_scope, other_project, AgentKind::AntigravityCli),
-            (latest, target, AgentKind::AntigravityCli),
+            (older, target, AgentKind::Other),
+            (other_agent, target, AgentKind::Other),
+            (other_scope, other_project, AgentKind::Other),
+            (latest, target, AgentKind::Other),
         ] {
             store
                 .writer
@@ -404,7 +389,7 @@ mod tests {
             .open_sessions_for_scope_agent(
                 ws,
                 target,
-                AgentKind::AntigravityCli,
+                AgentKind::Other,
                 ai_memory_core::OwnerFilter::Any,
                 Some(1),
             )
@@ -446,7 +431,7 @@ mod tests {
                     id,
                     workspace_id: ws,
                     project_id: proj,
-                    agent_kind: AgentKind::KiroCli,
+                    agent_kind: AgentKind::Other,
                     cwd: Some(std::path::PathBuf::from("/tmp/target")),
                     actor_user: None,
                 })
@@ -459,7 +444,7 @@ mod tests {
             .open_session_for_scope_agent_by_id(
                 ws,
                 proj,
-                AgentKind::KiroCli,
+                AgentKind::Other,
                 ai_memory_core::OwnerFilter::Any,
                 older,
                 false,
@@ -481,7 +466,7 @@ mod tests {
             .open_session_for_scope_agent_by_id(
                 ws,
                 proj,
-                AgentKind::KiroCli,
+                AgentKind::Other,
                 ai_memory_core::OwnerFilter::Any,
                 latest,
                 false,
@@ -519,7 +504,7 @@ mod tests {
                 id: ended,
                 workspace_id: ws,
                 project_id: proj,
-                agent_kind: AgentKind::AntigravityCli,
+                agent_kind: AgentKind::Other,
                 cwd: Some(std::path::PathBuf::from("/tmp/target")),
                 actor_user: None,
 
@@ -534,7 +519,7 @@ mod tests {
             .open_session_for_scope_agent_by_id(
                 ws,
                 proj,
-                AgentKind::AntigravityCli,
+                AgentKind::Other,
                 ai_memory_core::OwnerFilter::Any,
                 ended,
                 false,
@@ -552,7 +537,7 @@ mod tests {
             .open_session_for_scope_agent_by_id(
                 ws,
                 proj,
-                AgentKind::AntigravityCli,
+                AgentKind::Other,
                 ai_memory_core::OwnerFilter::Any,
                 ended,
                 true,
@@ -563,65 +548,6 @@ mod tests {
             reopen_lookup.map(|session| session.session_id),
             Some(ended),
             "--reopen must reach the ended session for a second finalize"
-        );
-    }
-
-    #[test]
-    fn synthetic_end_url_propagates_all_owners_once_when_requested() {
-        let endpoint =
-            ServerEndpoint::from_pair(Some("http://127.0.0.1:49374/base".to_string()), None);
-        let url = session_end_hook_url(
-            &endpoint,
-            "/tmp/project",
-            "default",
-            "project",
-            AgentKind::AntigravityCli,
-            true,
-        )
-        .unwrap();
-        let parsed = reqwest::Url::parse(&url).unwrap();
-        let query: Vec<_> = parsed.query_pairs().into_owned().collect();
-
-        assert_eq!(parsed.path(), "/base/hook");
-        assert_eq!(
-            query,
-            vec![
-                ("event".to_string(), "session-end".to_string()),
-                ("agent".to_string(), "antigravity-cli".to_string()),
-                ("cwd".to_string(), "/tmp/project".to_string()),
-                ("workspace".to_string(), "default".to_string()),
-                ("project".to_string(), "project".to_string()),
-                ("all_owners".to_string(), "true".to_string()),
-            ]
-        );
-    }
-
-    #[test]
-    fn synthetic_end_url_omits_all_owners_when_not_requested() {
-        let endpoint =
-            ServerEndpoint::from_pair(Some("http://127.0.0.1:49374/base".to_string()), None);
-        let url = session_end_hook_url(
-            &endpoint,
-            "/tmp/project",
-            "default",
-            "project",
-            AgentKind::AntigravityCli,
-            false,
-        )
-        .unwrap();
-        let parsed = reqwest::Url::parse(&url).unwrap();
-        let query: Vec<_> = parsed.query_pairs().into_owned().collect();
-
-        assert_eq!(parsed.path(), "/base/hook");
-        assert_eq!(
-            query,
-            vec![
-                ("event".to_string(), "session-end".to_string()),
-                ("agent".to_string(), "antigravity-cli".to_string()),
-                ("cwd".to_string(), "/tmp/project".to_string()),
-                ("workspace".to_string(), "default".to_string()),
-                ("project".to_string(), "project".to_string()),
-            ]
         );
     }
 }

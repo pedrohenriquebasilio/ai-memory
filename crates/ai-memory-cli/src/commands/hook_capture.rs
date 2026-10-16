@@ -2103,7 +2103,7 @@ drop_subagent_captures = "true"
             "session_id": "s",
             "cwd": inner_str,
         });
-        let decision = policy.inspect(AgentKind::ClaudeCode, &raw, inner_str);
+        let decision = policy.inspect(AgentKind::Other, &raw, inner_str);
         assert_eq!(decision.protocol().disposition(), CaptureDisposition::Drop);
     }
 

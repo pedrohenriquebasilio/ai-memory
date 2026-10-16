@@ -1112,40 +1112,10 @@ mod tests {
             WorkspaceId::new(),
             ProjectId::new(),
             SessionId::new(),
-            AgentKind::Codex,
+            AgentKind::Other,
             &lifecycle_only,
         );
         assert!(page.frontmatter_json.get("summary").is_none());
-    }
-
-    #[test]
-    fn the_synthesised_page_carries_the_summary() {
-        let observations = vec![
-            obs_at(
-                ObservationKind::SessionStart,
-                "session",
-                "2026-08-24T10:00:00Z",
-            ),
-            obs(ObservationKind::UserPrompt, "bound the scheduler queue"),
-            obs(ObservationKind::PostToolUse, "Bash"),
-            obs_at(
-                ObservationKind::SessionEnd,
-                "session",
-                "2026-08-24T10:05:00Z",
-            ),
-        ];
-        let page = synthesize_session_page(
-            WorkspaceId::new(),
-            ProjectId::new(),
-            SessionId::new(),
-            AgentKind::Codex,
-            &observations,
-        );
-        assert_eq!(page.frontmatter_json["agent"], "codex");
-        assert_eq!(
-            page.frontmatter_json["summary"],
-            serde_json::json!("1 prompt, 1 completed tool call across Bash, over 5m.")
-        );
     }
 
     /// Measured on a live 1,885-page instance: 21,136 of 29,804 `PostToolUse`
@@ -1240,7 +1210,7 @@ mod tests {
             WorkspaceId::new(),
             ProjectId::new(),
             SessionId::new(),
-            AgentKind::OpenCode,
+            AgentKind::Other,
             &[prompt],
         );
 
@@ -1259,7 +1229,7 @@ mod tests {
             WorkspaceId::new(),
             ProjectId::new(),
             session_id,
-            AgentKind::OpenCode,
+            AgentKind::Other,
             &observations,
         );
 
@@ -1276,14 +1246,14 @@ mod tests {
             WorkspaceId::new(),
             ProjectId::new(),
             first_session,
-            AgentKind::OpenCode,
+            AgentKind::Other,
             &observations,
         );
         let second = synthesize_session_page(
             WorkspaceId::new(),
             ProjectId::new(),
             second_session,
-            AgentKind::OpenCode,
+            AgentKind::Other,
             &observations,
         );
 
@@ -1468,7 +1438,7 @@ mod tests {
             WorkspaceId::new(),
             ProjectId::new(),
             SessionId::new(),
-            AgentKind::Codex,
+            AgentKind::Other,
             &observations,
         );
         assert!(page.title.contains("build the thing"));
@@ -1491,7 +1461,7 @@ mod tests {
             WorkspaceId::new(),
             ProjectId::new(),
             SessionId::new(),
-            AgentKind::Codex,
+            AgentKind::Other,
             &observations,
         );
         assert!(page.body.contains("`Bash`: 1"));
@@ -1507,7 +1477,7 @@ mod tests {
             WorkspaceId::new(),
             ProjectId::new(),
             SessionId::new(),
-            AgentKind::Codex,
+            AgentKind::Other,
             &[custom],
         );
 
@@ -1529,7 +1499,7 @@ mod tests {
             WorkspaceId::new(),
             ProjectId::new(),
             SessionId::new(),
-            AgentKind::Codex,
+            AgentKind::Other,
             &observations,
         );
         assert!(
@@ -1555,7 +1525,7 @@ mod tests {
             WorkspaceId::new(),
             ProjectId::new(),
             SessionId::new(),
-            AgentKind::Codex,
+            AgentKind::Other,
             &observations,
         );
         assert!(
@@ -1578,7 +1548,7 @@ mod tests {
             WorkspaceId::new(),
             ProjectId::new(),
             SessionId::new(),
-            AgentKind::Codex,
+            AgentKind::Other,
             &observations,
         );
         assert!(
@@ -1603,7 +1573,7 @@ mod tests {
             WorkspaceId::new(),
             ProjectId::new(),
             SessionId::new(),
-            AgentKind::Codex,
+            AgentKind::Other,
             &observations,
         );
         assert!(
@@ -1628,7 +1598,7 @@ mod tests {
             WorkspaceId::new(),
             ProjectId::new(),
             SessionId::new(),
-            AgentKind::Codex,
+            AgentKind::Other,
             &observations,
         );
 
@@ -1648,7 +1618,7 @@ mod tests {
             WorkspaceId::new(),
             ProjectId::new(),
             SessionId::new(),
-            AgentKind::Codex,
+            AgentKind::Other,
             &observations,
         );
 

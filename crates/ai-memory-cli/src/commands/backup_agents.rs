@@ -179,14 +179,14 @@ pub fn discover_assets(
     };
 
     // 1. Claude Code / Desktop
-    if filter_agent(AgentKind::ClaudeCode) {
+    if filter_agent(AgentKind::Other) {
         if want_global {
             let claude_dir = claude_config_dir(std::env::var_os("CLAUDE_CONFIG_DIR"))
                 .unwrap_or_else(|| home.join(".claude"));
             // Global MCP / Settings
             push_if_file(
                 &mut assets,
-                AgentKind::ClaudeCode,
+                AgentKind::Other,
                 AgentAssetKind::McpConfig,
                 AgentAssetScope::Global,
                 claude_dir.join("settings.json"),
@@ -195,7 +195,7 @@ pub fn discover_assets(
             );
             push_if_file(
                 &mut assets,
-                AgentKind::ClaudeCode,
+                AgentKind::Other,
                 AgentAssetKind::McpConfig,
                 AgentAssetScope::Global,
                 home.join(".claude.json"),
@@ -205,7 +205,7 @@ pub fn discover_assets(
             // Global Skills
             collect_dir_assets(
                 &mut assets,
-                AgentKind::ClaudeCode,
+                AgentKind::Other,
                 AgentAssetKind::Skill,
                 AgentAssetScope::Global,
                 &claude_dir.join("skills"),
@@ -215,7 +215,7 @@ pub fn discover_assets(
             // Plugins
             collect_dir_assets(
                 &mut assets,
-                AgentKind::ClaudeCode,
+                AgentKind::Other,
                 AgentAssetKind::Plugin,
                 AgentAssetScope::Global,
                 &claude_dir.join("plugins"),
@@ -227,7 +227,7 @@ pub fn discover_assets(
             // Project Skills
             collect_dir_assets(
                 &mut assets,
-                AgentKind::ClaudeCode,
+                AgentKind::Other,
                 AgentAssetKind::Skill,
                 AgentAssetScope::Project,
                 &cwd.join(".claude").join("skills"),
@@ -237,7 +237,7 @@ pub fn discover_assets(
             // Project Instructions
             push_if_file(
                 &mut assets,
-                AgentKind::ClaudeCode,
+                AgentKind::Other,
                 AgentAssetKind::Instruction,
                 AgentAssetScope::Project,
                 cwd.join("CLAUDE.md"),
@@ -249,14 +249,14 @@ pub fn discover_assets(
 
     // Reuse the installer path so platform-specific Claude Desktop configs
     // are backed up and restored at the same location.
-    if filter_agent(AgentKind::ClaudeDesktop) && want_global {
+    if filter_agent(AgentKind::Other) && want_global {
         #[cfg(any(target_os = "macos", target_os = "windows"))]
         {
             let desktop_cfg =
                 crate::commands::install_mcp::mcp_config_path(McpClient::ClaudeDesktop)?;
             push_if_file(
                 &mut assets,
-                AgentKind::ClaudeDesktop,
+                AgentKind::Other,
                 AgentAssetKind::McpConfig,
                 AgentAssetScope::Global,
                 desktop_cfg,
@@ -267,12 +267,12 @@ pub fn discover_assets(
     }
 
     // 2. OpenAI Codex CLI
-    if filter_agent(AgentKind::Codex) {
+    if filter_agent(AgentKind::Other) {
         if want_global {
             let codex_dir = home.join(".codex");
             push_if_file(
                 &mut assets,
-                AgentKind::Codex,
+                AgentKind::Other,
                 AgentAssetKind::McpConfig,
                 AgentAssetScope::Global,
                 codex_dir.join("config.toml"),
@@ -281,7 +281,7 @@ pub fn discover_assets(
             );
             push_if_file(
                 &mut assets,
-                AgentKind::Codex,
+                AgentKind::Other,
                 AgentAssetKind::McpConfig,
                 AgentAssetScope::Global,
                 codex_dir.join("mcp.json"),
@@ -290,7 +290,7 @@ pub fn discover_assets(
             );
             collect_dir_assets(
                 &mut assets,
-                AgentKind::Codex,
+                AgentKind::Other,
                 AgentAssetKind::Skill,
                 AgentAssetScope::Global,
                 &home.join(".agents").join("skills"),
@@ -299,7 +299,7 @@ pub fn discover_assets(
             )?;
             collect_dir_assets(
                 &mut assets,
-                AgentKind::Codex,
+                AgentKind::Other,
                 AgentAssetKind::Skill,
                 AgentAssetScope::Global,
                 &codex_dir.join("skills"),
@@ -308,7 +308,7 @@ pub fn discover_assets(
             )?;
             collect_dir_assets(
                 &mut assets,
-                AgentKind::Codex,
+                AgentKind::Other,
                 AgentAssetKind::Plugin,
                 AgentAssetScope::Global,
                 &codex_dir.join("plugins"),
@@ -319,7 +319,7 @@ pub fn discover_assets(
         if want_project {
             collect_dir_assets(
                 &mut assets,
-                AgentKind::Codex,
+                AgentKind::Other,
                 AgentAssetKind::Skill,
                 AgentAssetScope::Project,
                 &cwd.join(".agents").join("skills"),
@@ -328,7 +328,7 @@ pub fn discover_assets(
             )?;
             push_if_file(
                 &mut assets,
-                AgentKind::Codex,
+                AgentKind::Other,
                 AgentAssetKind::Instruction,
                 AgentAssetScope::Project,
                 cwd.join("AGENTS.md"),
@@ -339,12 +339,12 @@ pub fn discover_assets(
     }
 
     // 3. Antigravity CLI
-    if filter_agent(AgentKind::AntigravityCli) {
+    if filter_agent(AgentKind::Other) {
         let gemini_dir = home.join(".gemini");
         if want_global {
             push_if_file(
                 &mut assets,
-                AgentKind::AntigravityCli,
+                AgentKind::Other,
                 AgentAssetKind::McpConfig,
                 AgentAssetScope::Global,
                 gemini_dir.join("config").join("mcp_config.json"),
@@ -353,7 +353,7 @@ pub fn discover_assets(
             );
             push_if_file(
                 &mut assets,
-                AgentKind::AntigravityCli,
+                AgentKind::Other,
                 AgentAssetKind::McpConfig,
                 AgentAssetScope::Global,
                 gemini_dir.join("antigravity-cli").join("mcp_config.json"),
@@ -362,7 +362,7 @@ pub fn discover_assets(
             );
             collect_dir_assets(
                 &mut assets,
-                AgentKind::AntigravityCli,
+                AgentKind::Other,
                 AgentAssetKind::Skill,
                 AgentAssetScope::Global,
                 &gemini_dir.join("antigravity-cli").join("skills"),
@@ -371,7 +371,7 @@ pub fn discover_assets(
             )?;
             collect_dir_assets(
                 &mut assets,
-                AgentKind::AntigravityCli,
+                AgentKind::Other,
                 AgentAssetKind::Plugin,
                 AgentAssetScope::Global,
                 &gemini_dir.join("antigravity-cli").join("plugins"),
@@ -382,7 +382,7 @@ pub fn discover_assets(
         if want_project {
             collect_dir_assets(
                 &mut assets,
-                AgentKind::AntigravityCli,
+                AgentKind::Other,
                 AgentAssetKind::Skill,
                 AgentAssetScope::Project,
                 &cwd.join(".gemini").join("skills"),
@@ -393,12 +393,12 @@ pub fn discover_assets(
     }
 
     // 4. Gemini CLI
-    if filter_agent(AgentKind::GeminiCli) {
+    if filter_agent(AgentKind::Other) {
         let gemini_dir = home.join(".gemini");
         if want_global {
             push_if_file(
                 &mut assets,
-                AgentKind::GeminiCli,
+                AgentKind::Other,
                 AgentAssetKind::McpConfig,
                 AgentAssetScope::Global,
                 gemini_dir.join("settings.json"),
@@ -407,7 +407,7 @@ pub fn discover_assets(
             );
             collect_dir_assets(
                 &mut assets,
-                AgentKind::GeminiCli,
+                AgentKind::Other,
                 AgentAssetKind::Skill,
                 AgentAssetScope::Global,
                 &gemini_dir.join("skills"),
@@ -418,7 +418,7 @@ pub fn discover_assets(
         if want_project {
             push_if_file(
                 &mut assets,
-                AgentKind::GeminiCli,
+                AgentKind::Other,
                 AgentAssetKind::Instruction,
                 AgentAssetScope::Project,
                 cwd.join("GEMINI.md"),
@@ -473,7 +473,7 @@ pub fn discover_assets(
     }
 
     // 5. OpenCode (v1 / v2)
-    if filter_agent(AgentKind::OpenCode) {
+    if filter_agent(AgentKind::Other) {
         if want_global {
             let opencode_config =
                 crate::commands::install_mcp::mcp_config_path(McpClient::OpenCode)?;
@@ -483,7 +483,7 @@ pub fn discover_assets(
                 .context("OpenCode config path has no parent directory")?;
             push_if_file(
                 &mut assets,
-                AgentKind::OpenCode,
+                AgentKind::Other,
                 AgentAssetKind::McpConfig,
                 AgentAssetScope::Global,
                 opencode_config,
@@ -492,7 +492,7 @@ pub fn discover_assets(
             );
             push_if_file(
                 &mut assets,
-                AgentKind::OpenCode,
+                AgentKind::Other,
                 AgentAssetKind::McpConfig,
                 AgentAssetScope::Global,
                 opencode_dir.join("opencode.jsonc"),
@@ -501,7 +501,7 @@ pub fn discover_assets(
             );
             collect_dir_assets(
                 &mut assets,
-                AgentKind::OpenCode,
+                AgentKind::Other,
                 AgentAssetKind::Plugin,
                 AgentAssetScope::Global,
                 &opencode_dir.join("plugins"),
@@ -512,7 +512,7 @@ pub fn discover_assets(
         if want_project {
             push_if_file(
                 &mut assets,
-                AgentKind::OpenCode,
+                AgentKind::Other,
                 AgentAssetKind::McpConfig,
                 AgentAssetScope::Project,
                 cwd.join("opencode.json"),
@@ -521,7 +521,7 @@ pub fn discover_assets(
             );
             push_if_file(
                 &mut assets,
-                AgentKind::OpenCode,
+                AgentKind::Other,
                 AgentAssetKind::McpConfig,
                 AgentAssetScope::Project,
                 cwd.join("opencode.jsonc"),
@@ -532,12 +532,12 @@ pub fn discover_assets(
     }
 
     // 6. Devin
-    if filter_agent(AgentKind::Devin) {
+    if filter_agent(AgentKind::Other) {
         if want_global {
             let devin_dir = home.join(".devin");
             push_if_file(
                 &mut assets,
-                AgentKind::Devin,
+                AgentKind::Other,
                 AgentAssetKind::McpConfig,
                 AgentAssetScope::Global,
                 devin_dir.join("config.json"),
@@ -546,7 +546,7 @@ pub fn discover_assets(
             );
             collect_dir_assets(
                 &mut assets,
-                AgentKind::Devin,
+                AgentKind::Other,
                 AgentAssetKind::Skill,
                 AgentAssetScope::Global,
                 &devin_dir.join("skills"),
@@ -557,7 +557,7 @@ pub fn discover_assets(
         if want_project {
             collect_dir_assets(
                 &mut assets,
-                AgentKind::Devin,
+                AgentKind::Other,
                 AgentAssetKind::Skill,
                 AgentAssetScope::Project,
                 &cwd.join(".devin").join("skills"),
@@ -568,12 +568,12 @@ pub fn discover_assets(
     }
 
     // 7. Grok
-    if filter_agent(AgentKind::Grok) {
+    if filter_agent(AgentKind::Other) {
         if want_global {
             let grok_dir = home.join(".grok");
             push_if_file(
                 &mut assets,
-                AgentKind::Grok,
+                AgentKind::Other,
                 AgentAssetKind::McpConfig,
                 AgentAssetScope::Global,
                 grok_dir.join("config.toml"),
@@ -582,7 +582,7 @@ pub fn discover_assets(
             );
             collect_dir_assets(
                 &mut assets,
-                AgentKind::Grok,
+                AgentKind::Other,
                 AgentAssetKind::Skill,
                 AgentAssetScope::Global,
                 &grok_dir.join("skills"),
@@ -593,7 +593,7 @@ pub fn discover_assets(
         if want_project {
             push_if_file(
                 &mut assets,
-                AgentKind::Grok,
+                AgentKind::Other,
                 AgentAssetKind::McpConfig,
                 AgentAssetScope::Project,
                 cwd.join(".grok").join("config.toml"),
@@ -602,7 +602,7 @@ pub fn discover_assets(
             );
             collect_dir_assets(
                 &mut assets,
-                AgentKind::Grok,
+                AgentKind::Other,
                 AgentAssetKind::Skill,
                 AgentAssetScope::Project,
                 &cwd.join(".grok").join("skills"),
@@ -613,11 +613,11 @@ pub fn discover_assets(
     }
 
     // 8. Kiro CLI
-    if filter_agent(AgentKind::KiroCli) && want_global {
+    if filter_agent(AgentKind::Other) && want_global {
         let kiro_dir = home.join(".kiro");
         push_if_file(
             &mut assets,
-            AgentKind::KiroCli,
+            AgentKind::Other,
             AgentAssetKind::McpConfig,
             AgentAssetScope::Global,
             kiro_dir.join("settings").join("mcp.json"),
@@ -626,7 +626,7 @@ pub fn discover_assets(
         );
         collect_dir_assets(
             &mut assets,
-            AgentKind::KiroCli,
+            AgentKind::Other,
             AgentAssetKind::Skill,
             AgentAssetScope::Global,
             &kiro_dir.join("agents"),
@@ -636,11 +636,11 @@ pub fn discover_assets(
     }
 
     // 9. OpenClaw
-    if filter_agent(AgentKind::OpenClaw) && want_global {
+    if filter_agent(AgentKind::Other) && want_global {
         let openclaw_dir = home.join(".openclaw");
         push_if_file(
             &mut assets,
-            AgentKind::OpenClaw,
+            AgentKind::Other,
             AgentAssetKind::McpConfig,
             AgentAssetScope::Global,
             openclaw_dir.join("config.json"),
@@ -649,7 +649,7 @@ pub fn discover_assets(
         );
         collect_dir_assets(
             &mut assets,
-            AgentKind::OpenClaw,
+            AgentKind::Other,
             AgentAssetKind::Plugin,
             AgentAssetScope::Global,
             &openclaw_dir.join("extensions"),
@@ -659,11 +659,11 @@ pub fn discover_assets(
     }
 
     // 10. Command Code
-    if filter_agent(AgentKind::CommandCode) && want_global {
+    if filter_agent(AgentKind::Other) && want_global {
         let cmdc_dir = home.join(".commandcode");
         push_if_file(
             &mut assets,
-            AgentKind::CommandCode,
+            AgentKind::Other,
             AgentAssetKind::McpConfig,
             AgentAssetScope::Global,
             cmdc_dir.join("mcp.json"),
@@ -673,11 +673,11 @@ pub fn discover_assets(
     }
 
     // 11. Kimi Code
-    if filter_agent(AgentKind::KimiCode) && want_global {
+    if filter_agent(AgentKind::Other) && want_global {
         let kimi_dir = home.join(".kimi");
         push_if_file(
             &mut assets,
-            AgentKind::KimiCode,
+            AgentKind::Other,
             AgentAssetKind::McpConfig,
             AgentAssetScope::Global,
             kimi_dir.join("mcp.json"),
@@ -686,7 +686,7 @@ pub fn discover_assets(
         );
         collect_dir_assets(
             &mut assets,
-            AgentKind::KimiCode,
+            AgentKind::Other,
             AgentAssetKind::Skill,
             AgentAssetScope::Global,
             &kimi_dir.join("skills"),

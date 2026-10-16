@@ -11,6 +11,41 @@ version in [`docs/changelog/`](docs/changelog/):
 
 ## [Unreleased]
 
+### Added
+- Added store migration `V84__cursor_only_agent_kind.sql`, which
+  normalises every persisted legacy `agent_kind` value in `sessions`,
+  `managed_runs` (both `agent_kind` and `previous_agent_kind`),
+  `workstream_native_sessions`, `workstream_events` and `ingest_keys` to
+  `other`, preserves `cursor` rows, rebuilds the `sessions` CHECK to
+  `('cursor','other')`, recreates every index and trigger the previous
+  table carried, and rebuilds the `workstream_events_fts` mirror so a
+  cross-session search cannot surface the stale value. The adversarial
+  Phase 2 isolation test
+  `crates/ai-memory-store/tests/suite/cursor_only_migration.rs` seeds a
+  two-workspace / two-project fixture with every legacy wire value and
+  proves no row drifts across workspace or project boundaries during the
+  rebuild (invariant #16 in `AGENTS.md`). (#2)
+
+### Changed
+- Collapsed the `AgentKind` enum to `{Cursor, Other}` across the Rust
+  workspace and the serialized wire format. `Other` is the explicit
+  "legacy / unknown" bucket for rows migrated from an earlier multi-harness
+  release or unknown wire values, not an advertised supported harness.
+  Per-harness policy, dispatch, fixtures and tests that only existed to
+  disambiguate between the retired variants were collapsed into the Cursor
+  path or the conservative `Other` fallback as Phase 2 of the Cursor
+  Desktop-only reduction (`docs/cursor-only-plan.md`). (#2)
+- Preserved `ai-memory run` and the `ai-memory-workstream` crate. Named
+  non-Cursor harness choices were removed from the command, the internal
+  machinery the Cursor path still exercises was kept, and the concrete
+  Cursor Desktop launch and LaunchAgent mechanics are deferred to Phase 3
+  of the Cursor Desktop-only reduction. (#2)
+- Marked the lib and integration tests whose fixtures depend on the deleted
+  non-Cursor hook bundles with `#[ignore]`, pointing at Phase 3 of
+  `docs/cursor-only-plan.md`. The large `install_hooks.rs`, `run.rs`,
+  `run_autowire.rs`, and `upgrade.rs` dispatchers stay compiling until that
+  phase collapses them. (#1)
+
 ### Removed
 - Removed the hook bundles for non-Cursor coding harnesses: Antigravity CLI,
   Claude Code, Codex, Command Code, Copilot CLI, Devin, Gemini CLI, Grok,
@@ -42,13 +77,6 @@ version in [`docs/changelog/`](docs/changelog/):
   (`tests/e2e/claude_plugin_smoke.py`, `tests/e2e/codex_plugin_smoke.py`,
   `tests/hooks/test_plugin_launcher.sh`, `tests/hooks/test_grok_ps.ps1`).
   (#1)
-
-### Changed
-- Marked the lib and integration tests whose fixtures depend on the deleted
-  non-Cursor hook bundles with `#[ignore]`, pointing at Phase 3 of
-  `docs/cursor-only-plan.md`. The large `install_hooks.rs`, `run.rs`,
-  `run_autowire.rs`, and `upgrade.rs` dispatchers stay compiling until that
-  phase collapses them. (#1)
 
 ## [3.1.0] - 2026-10-16
 

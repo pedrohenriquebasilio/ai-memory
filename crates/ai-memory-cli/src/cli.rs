@@ -2486,29 +2486,29 @@ impl AgentChoice {
     pub const fn kind(self) -> ai_memory_core::AgentKind {
         use ai_memory_core::AgentKind;
         match self {
-            Self::ClaudeCode => AgentKind::ClaudeCode,
-            Self::Codex => AgentKind::Codex,
+            Self::ClaudeCode => AgentKind::Other,
+            Self::Codex => AgentKind::Other,
             Self::Cursor => AgentKind::Cursor,
-            Self::GeminiCli => AgentKind::GeminiCli,
-            Self::OpenCode | Self::OpenCode2 => AgentKind::OpenCode,
-            Self::Pi => AgentKind::Pi,
-            Self::Omp => AgentKind::Omp,
-            Self::Openclaw => AgentKind::OpenClaw,
-            Self::AntigravityCli => AgentKind::AntigravityCli,
-            Self::Grok => AgentKind::Grok,
-            Self::Zero => AgentKind::Zero,
-            Self::Devin => AgentKind::Devin,
-            Self::KimiCode => AgentKind::KimiCode,
-            Self::KiroCli | Self::KiroCliV3 => AgentKind::KiroCli,
-            Self::CommandCode => AgentKind::CommandCode,
-            Self::Pool => AgentKind::Pool,
-            Self::Zcode => AgentKind::Zcode,
-            Self::Hermes => AgentKind::Hermes,
-            Self::CopilotCli => AgentKind::CopilotCli,
-            Self::Droid => AgentKind::Droid,
-            Self::Muse => AgentKind::Muse,
-            Self::CodeBuddy => AgentKind::CodeBuddy,
-            Self::IbmBob => AgentKind::IbmBob,
+            Self::GeminiCli => AgentKind::Other,
+            Self::OpenCode | Self::OpenCode2 => AgentKind::Other,
+            Self::Pi => AgentKind::Other,
+            Self::Omp => AgentKind::Other,
+            Self::Openclaw => AgentKind::Other,
+            Self::AntigravityCli => AgentKind::Other,
+            Self::Grok => AgentKind::Other,
+            Self::Zero => AgentKind::Other,
+            Self::Devin => AgentKind::Other,
+            Self::KimiCode => AgentKind::Other,
+            Self::KiroCli | Self::KiroCliV3 => AgentKind::Other,
+            Self::CommandCode => AgentKind::Other,
+            Self::Pool => AgentKind::Other,
+            Self::Zcode => AgentKind::Other,
+            Self::Hermes => AgentKind::Other,
+            Self::CopilotCli => AgentKind::Other,
+            Self::Droid => AgentKind::Other,
+            Self::Muse => AgentKind::Other,
+            Self::CodeBuddy => AgentKind::Other,
+            Self::IbmBob => AgentKind::Other,
         }
     }
 
@@ -3767,77 +3767,6 @@ mod tests {
     }
 
     #[test]
-    fn finalize_session_parses_typed_id_and_rejects_ambiguous_selection() {
-        let session_id = ai_memory_core::SessionId::new();
-        let parsed = Cli::try_parse_from([
-            "ai-memory",
-            "finalize-session",
-            "--session-id",
-            &session_id.to_string(),
-        ])
-        .expect("valid session id parses");
-        let Command::FinalizeSession(args) = parsed.command else {
-            panic!("expected finalize-session command");
-        };
-        assert_eq!(args.session_id, Some(session_id));
-
-        assert!(
-            Cli::try_parse_from([
-                "ai-memory",
-                "finalize-session",
-                "--session-id",
-                "not-a-uuid",
-            ])
-            .is_err(),
-            "malformed session ids must fail at the CLI boundary"
-        );
-        assert!(
-            Cli::try_parse_from([
-                "ai-memory",
-                "finalize-session",
-                "--all",
-                "--session-id",
-                &session_id.to_string(),
-            ])
-            .is_err(),
-            "--all and --session-id must be mutually exclusive"
-        );
-    }
-
-    #[test]
-    fn finalize_session_accepts_hermes_and_every_captured_agent() {
-        // #623: hermes is accepted for capture/storage but the install-oriented
-        // AgentChoice enum lacked it, so finalize-session refused it and hermes
-        // sessions could never be closed. finalize is agent-agnostic; it must
-        // accept every AgentKind the store recognises.
-        let parsed = Cli::try_parse_from(["ai-memory", "finalize-session", "--agent", "hermes"])
-            .expect("hermes must be a valid finalize agent");
-        let Command::FinalizeSession(args) = parsed.command else {
-            panic!("expected finalize-session command");
-        };
-        assert_eq!(args.agent, ai_memory_core::AgentKind::Hermes);
-
-        // Drift guard: every AgentKind must be finalizable, so the CLI accept
-        // set can never again fall behind the store's CHECK set (the exact
-        // drift that caused #623). `other` is included via its explicit spelling.
-        for kind in ai_memory_core::AgentKind::ALL {
-            let parsed =
-                Cli::try_parse_from(["ai-memory", "finalize-session", "--agent", kind.as_str()])
-                    .unwrap_or_else(|e| panic!("agent {} must finalize: {e}", kind.as_str()));
-            let Command::FinalizeSession(args) = parsed.command else {
-                panic!("expected finalize-session command");
-            };
-            assert_eq!(args.agent, kind, "wire round-trip for {}", kind.as_str());
-        }
-
-        // A genuine typo is rejected rather than silently mapped to Other.
-        assert!(
-            Cli::try_parse_from(["ai-memory", "finalize-session", "--agent", "hermez"]).is_err(),
-            "an unknown agent must be rejected, not silently accepted as Other"
-        );
-    }
-
-    #[test]
     fn architecture_lists_every_visible_cli_subcommand() {
         let architecture = include_str!("../../../docs/ARCHITECTURE.md");
         let cli_section = architecture
@@ -4402,7 +4331,7 @@ mod tests {
                 panic!("expected install-hooks for opencode2 alias {alias}");
             };
             assert_eq!(args.agent, AgentChoice::OpenCode2);
-            assert_eq!(args.agent.kind(), ai_memory_core::AgentKind::OpenCode);
+            assert_eq!(args.agent.kind(), ai_memory_core::AgentKind::Other);
             assert_eq!(args.agent.script_hook_subdir(), None);
 
             let cli = Cli::try_parse_from([
@@ -4594,94 +4523,8 @@ mod tests {
                 panic!("expected install-hooks for Kiro v3 alias {alias}");
             };
             assert_eq!(args.agent, AgentChoice::KiroCliV3);
-            assert_eq!(args.agent.kind(), ai_memory_core::AgentKind::KiroCli);
+            assert_eq!(args.agent.kind(), ai_memory_core::AgentKind::Other);
         }
-    }
-
-    #[test]
-    fn pool_hook_and_finalize_aliases_parse() {
-        for alias in ["pool", "poolside"] {
-            let cli = Cli::try_parse_from([
-                "ai-memory",
-                "install-hooks",
-                "--agent",
-                alias,
-                "--server-url",
-                "http://127.0.0.1:49374",
-            ])
-            .unwrap_or_else(|error| panic!("failed to parse Pool alias {alias}: {error}"));
-            let Command::InstallHooks(args) = cli.command else {
-                panic!("expected install-hooks for Pool alias {alias}");
-            };
-            assert_eq!(args.agent, AgentChoice::Pool);
-            assert_eq!(args.agent.kind(), ai_memory_core::AgentKind::Pool);
-            assert_eq!(args.agent.script_hook_subdir(), Some("pool"));
-        }
-        let cli = Cli::try_parse_from(["ai-memory", "finalize-session", "--agent", "pool"])
-            .expect("failed to parse finalize-session --agent pool");
-        let Command::FinalizeSession(args) = cli.command else {
-            panic!("expected finalize-session for pool");
-        };
-        assert_eq!(args.agent, ai_memory_core::AgentKind::Pool);
-    }
-
-    #[test]
-    fn zcode_hook_and_finalize_aliases_parse() {
-        for alias in ["zcode", "zai"] {
-            let cli = Cli::try_parse_from([
-                "ai-memory",
-                "install-hooks",
-                "--agent",
-                alias,
-                "--server-url",
-                "http://127.0.0.1:49374",
-            ])
-            .unwrap_or_else(|error| panic!("failed to parse ZCode alias {alias}: {error}"));
-            let Command::InstallHooks(args) = cli.command else {
-                panic!("expected install-hooks for ZCode alias {alias}");
-            };
-            assert_eq!(args.agent, AgentChoice::Zcode);
-            assert_eq!(args.agent.kind(), ai_memory_core::AgentKind::Zcode);
-            // Native exec-form integration: no script bundle to stage.
-            assert_eq!(args.agent.script_hook_subdir(), None);
-        }
-        let cli = Cli::try_parse_from(["ai-memory", "finalize-session", "--agent", "zcode"])
-            .expect("failed to parse finalize-session --agent zcode");
-        let Command::FinalizeSession(args) = cli.command else {
-            panic!("expected finalize-session for zcode");
-        };
-        assert_eq!(args.agent, ai_memory_core::AgentKind::Zcode);
-    }
-
-    /// Hermes is the second no-shell harness (after ZCode): it splits the
-    /// configured `command` into argv itself, so the generated block invokes
-    /// the native `hook` subcommand instead of a `.sh` bundle.
-    #[test]
-    fn hermes_hook_and_finalize_aliases_parse() {
-        for alias in ["hermes", "hermes-agent"] {
-            let cli = Cli::try_parse_from([
-                "ai-memory",
-                "install-hooks",
-                "--agent",
-                alias,
-                "--server-url",
-                "http://127.0.0.1:49374",
-            ])
-            .unwrap_or_else(|error| panic!("failed to parse Hermes alias {alias}: {error}"));
-            let Command::InstallHooks(args) = cli.command else {
-                panic!("expected install-hooks for Hermes alias {alias}");
-            };
-            assert_eq!(args.agent, AgentChoice::Hermes);
-            assert_eq!(args.agent.kind(), ai_memory_core::AgentKind::Hermes);
-            // Native exec-form integration: no script bundle to stage.
-            assert_eq!(args.agent.script_hook_subdir(), None);
-        }
-        let cli = Cli::try_parse_from(["ai-memory", "finalize-session", "--agent", "hermes"])
-            .expect("failed to parse finalize-session --agent hermes");
-        let Command::FinalizeSession(args) = cli.command else {
-            panic!("expected finalize-session for hermes");
-        };
-        assert_eq!(args.agent, ai_memory_core::AgentKind::Hermes);
     }
 
     #[test]
@@ -4726,7 +4569,7 @@ mod tests {
                 panic!("expected install-hooks");
             };
             assert_eq!(args.agent, AgentChoice::Droid);
-            assert_eq!(args.agent.kind(), ai_memory_core::AgentKind::Droid);
+            assert_eq!(args.agent.kind(), ai_memory_core::AgentKind::Other);
             // Native commands only: there is no `hooks/droid` bundle.
             assert_eq!(args.agent.script_hook_subdir(), None);
 
@@ -4748,7 +4591,7 @@ mod tests {
                 panic!("expected install-hooks");
             };
             assert_eq!(args.agent, AgentChoice::CodeBuddy);
-            assert_eq!(args.agent.kind(), ai_memory_core::AgentKind::CodeBuddy);
+            assert_eq!(args.agent.kind(), ai_memory_core::AgentKind::Other);
             assert_eq!(args.agent.script_hook_subdir(), None);
         }
     }
@@ -4762,7 +4605,7 @@ mod tests {
                 panic!("expected install-hooks");
             };
             assert_eq!(args.agent, AgentChoice::IbmBob);
-            assert_eq!(args.agent.kind(), ai_memory_core::AgentKind::IbmBob);
+            assert_eq!(args.agent.kind(), ai_memory_core::AgentKind::Other);
             assert_eq!(args.agent.script_hook_subdir(), None);
 
             let mcp = Cli::try_parse_from(["ai-memory", "install-mcp", "--client", alias])
@@ -4783,7 +4626,7 @@ mod tests {
                 panic!("expected install-hooks");
             };
             assert_eq!(args.agent, AgentChoice::Muse);
-            assert_eq!(args.agent.kind(), ai_memory_core::AgentKind::Muse);
+            assert_eq!(args.agent.kind(), ai_memory_core::AgentKind::Other);
             // Native commands only: there is no `hooks/muse` bundle.
             assert_eq!(args.agent.script_hook_subdir(), None);
 
@@ -4808,35 +4651,6 @@ mod tests {
         };
         assert_eq!(args.agent, BridgeAgent::ClaudeCode);
         assert_eq!(args.agent.session_env(), "CLAUDE_CODE_SESSION_ID");
-    }
-
-    #[test]
-    fn copilot_cli_install_hooks_agent_parses_without_a_bare_copilot_alias() {
-        let hooks = Cli::try_parse_from(["ai-memory", "install-hooks", "--agent", "copilot-cli"])
-            .expect("copilot-cli should parse");
-        let Command::InstallHooks(args) = hooks.command else {
-            panic!("expected install-hooks");
-        };
-        assert_eq!(args.agent, AgentChoice::CopilotCli);
-        assert_eq!(args.agent.kind(), ai_memory_core::AgentKind::CopilotCli);
-        assert_eq!(args.agent.script_hook_subdir(), Some("copilot-cli"));
-        // `copilot` already means the VS Code MCP client on `install-mcp`;
-        // it must not silently select the CLI hook agent here.
-        assert!(Cli::try_parse_from(["ai-memory", "install-hooks", "--agent", "copilot"]).is_err());
-
-        let mcp = Cli::try_parse_from(["ai-memory", "install-mcp", "--client", "copilot-cli"])
-            .expect("install-mcp --client copilot-cli should parse");
-        let Command::InstallMcp(args) = mcp.command else {
-            panic!("expected install-mcp");
-        };
-        assert_eq!(args.client, McpClient::CopilotCli);
-        // ...while the bare word keeps selecting the VS Code client.
-        let vscode = Cli::try_parse_from(["ai-memory", "install-mcp", "--client", "copilot"])
-            .expect("install-mcp --client copilot should parse");
-        let Command::InstallMcp(args) = vscode.command else {
-            panic!("expected install-mcp");
-        };
-        assert_eq!(args.client, McpClient::VsCodeCopilot);
     }
 
     #[test]

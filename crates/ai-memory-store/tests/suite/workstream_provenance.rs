@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 fn event(id: &str, source: &str, metadata: Value) -> NewWorkstreamEvent {
     NewWorkstreamEvent {
         event_id: id.into(),
-        agent: AgentKind::Codex,
+        agent: AgentKind::Other,
         native_session_id: "native-1".into(),
         source_record_id: Some(source.into()),
         kind: WorkstreamEventKind::ToolResult,
@@ -38,7 +38,7 @@ async fn prepare(store: &Store) -> ai_memory_store::PreparedWorkstreamRun {
             repo_fingerprint: "repo".into(),
             worktree_fingerprint: "worktree".into(),
             cwd: "/repo".into(),
-            agent: AgentKind::Codex,
+            agent: AgentKind::Other,
             automatic_harness: false,
             available_agents: Vec::new(),
             selection: WorkstreamSelection::Current,

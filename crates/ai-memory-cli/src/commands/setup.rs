@@ -1439,25 +1439,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn the_closing_line_names_the_agents_and_the_question() {
-        let one = next_step(&[AgentPlan::new(AgentChoice::ClaudeCode, None)]);
-        assert!(one.contains("Restart claude-code so it loads"), "{one}");
-        assert!(one.contains(FIRST_QUESTION), "{one}");
-        let two = next_step(&[
-            AgentPlan::new(AgentChoice::ClaudeCode, None),
-            AgentPlan::new(AgentChoice::Codex, None),
-        ]);
-        assert!(
-            two.contains("Restart claude-code, codex so they load"),
-            "{two}"
-        );
-        assert!(two.contains("ask one of them"), "{two}");
-        let none = next_step(&[]);
-        assert!(none.contains("no agent is wired"), "{none}");
-        assert!(!none.contains(FIRST_QUESTION), "{none}");
-    }
-
     fn spec(home: &Path) -> user_service::ServiceSpec {
         user_service::ServiceSpec {
             exe: PathBuf::from("/opt/ai-memory/ai-memory"),

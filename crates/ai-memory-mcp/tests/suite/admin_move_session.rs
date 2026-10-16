@@ -145,7 +145,7 @@ async fn seed_session(
             id: sid,
             workspace_id: ws,
             project_id: proj,
-            agent_kind: AgentKind::ClaudeCode,
+            agent_kind: AgentKind::Other,
             cwd: Some(cwd.into()),
             actor_user: None,
         })
@@ -179,7 +179,7 @@ async fn seed_session(
             workspace_id: ws,
             project_id: proj,
             from_session_id: Some(sid),
-            from_agent: AgentKind::ClaudeCode,
+            from_agent: AgentKind::Other,
             to_agent: None,
             cwd: None,
             summary: "handoff from the moved session".into(),
@@ -634,7 +634,7 @@ async fn move_session_pending_job_or_open_session_needs_force() {
             id: open,
             workspace_id: scopes.ws,
             project_id: scopes.src,
-            agent_kind: AgentKind::Codex,
+            agent_kind: AgentKind::Other,
             cwd: None,
             actor_user: None,
         })
@@ -751,7 +751,7 @@ async fn move_session_batch_stops_at_first_error_and_reports_progress() {
             id: open,
             workspace_id: scopes.ws,
             project_id: scopes.src,
-            agent_kind: AgentKind::Codex,
+            agent_kind: AgentKind::Other,
             cwd: None,
             actor_user: None,
         })
@@ -1099,7 +1099,7 @@ async fn move_session_rehome_of_open_session_needs_no_force() {
             id: sid,
             workspace_id: scopes.ws,
             project_id: scopes.dst,
-            agent_kind: AgentKind::ClaudeCode,
+            agent_kind: AgentKind::Other,
             cwd: Some("/repo/dst".into()),
             actor_user: None,
         })

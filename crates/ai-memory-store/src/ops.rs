@@ -7920,7 +7920,7 @@ pub(crate) mod tests {
             handoff_id,
             workspace_id,
             project_id,
-            accepting_agent: AgentKind::Codex,
+            accepting_agent: AgentKind::Other,
             accepting_session: None,
             accepting_user: None,
             owner_filter: OwnerFilter::Any,
@@ -8203,7 +8203,7 @@ pub(crate) mod tests {
             id,
             workspace_id: ws,
             project_id: proj,
-            agent_kind: AgentKind::Codex,
+            agent_kind: AgentKind::Other,
             cwd: None,
             actor_user: owner.map(str::to_owned),
         }
@@ -8267,7 +8267,7 @@ pub(crate) mod tests {
         conn.execute(
             "INSERT INTO workstream_events (workstream_id, sequence, event_id, agent_kind, \
              native_session_id, kind, role, content, created_at) \
-             VALUES (?1, 1, ?2, 'claude-code', 'native-1', 'message', 'user', ?3, ?4)",
+             VALUES (?1, 1, ?2, 'cursor', 'native-1', 'message', 'user', ?3, ?4)",
             rusqlite::params![
                 workstream_id.as_bytes(),
                 format!("evt-{marker}"),
@@ -8629,7 +8629,7 @@ pub(crate) mod tests {
                 workspace_id: ws,
                 project_id: other,
                 from_session_id: Some(sid),
-                from_agent: ai_memory_core::AgentKind::ClaudeCode,
+                from_agent: ai_memory_core::AgentKind::Other,
                 to_agent: None,
                 cwd: None,
                 summary: "handoff in other project".into(),
@@ -8966,7 +8966,7 @@ pub(crate) mod tests {
                 workspace_id: other_ws,
                 project_id: other_proj,
                 from_session_id: Some(sid),
-                from_agent: ai_memory_core::AgentKind::ClaudeCode,
+                from_agent: ai_memory_core::AgentKind::Other,
                 to_agent: None,
                 cwd: None,
                 summary: "collateral handoff".into(),
@@ -9494,7 +9494,7 @@ pub(crate) mod tests {
         if let Some(sid) = &from_session {
             conn.execute(
                 "INSERT INTO sessions (id, workspace_id, project_id, agent_kind, started_at, \
-                 actor_user) VALUES (?1, ?2, ?3, 'codex', 1, ?4)",
+                 actor_user) VALUES (?1, ?2, ?3, 'cursor', 1, ?4)",
                 rusqlite::params![&sid[..], ws.as_bytes(), proj.as_bytes(), owner],
             )
             .unwrap();
@@ -9502,7 +9502,7 @@ pub(crate) mod tests {
         conn.execute(
             "INSERT INTO handoffs (id, workspace_id, project_id, from_session_id, from_agent, \
              summary, state, created_at, cwd, owner_user) \
-             VALUES (?1, ?2, ?3, ?4, 'codex', 'baton', 'open', ?5, ?6, ?7)",
+             VALUES (?1, ?2, ?3, ?4, 'cursor', 'baton', 'open', ?5, ?6, ?7)",
             rusqlite::params![
                 &id[..],
                 ws.as_bytes(),
@@ -9633,7 +9633,7 @@ pub(crate) mod tests {
         let (_tmp, mut conn, ws, proj) = fresh_db();
         conn.execute(
             "INSERT INTO handoffs (id, workspace_id, project_id, from_agent, summary, state, \
-             created_at) VALUES (?1, ?2, ?3, 'codex', 'done', 'accepted', 1)",
+             created_at) VALUES (?1, ?2, ?3, 'cursor', 'done', 'accepted', 1)",
             rusqlite::params![
                 &uuid::Uuid::now_v7().as_bytes()[..],
                 ws.as_bytes(),
@@ -9669,7 +9669,7 @@ pub(crate) mod tests {
                 workspace_id: ws,
                 project_id: project,
                 from_session_id: from,
-                from_agent: AgentKind::OpenCode,
+                from_agent: AgentKind::Other,
                 to_agent: None,
                 cwd: Some(cwd.into()),
                 summary: format!("{cwd} baton"),
@@ -9928,7 +9928,7 @@ pub(crate) mod tests {
         conn.execute(
             "INSERT INTO handoffs (id, workspace_id, project_id, from_session_id, from_agent, \
              summary, state, created_at, accepted_by_session) \
-             VALUES (?1, ?2, ?3, ?4, 'codex', 'authored-by-author', 'accepted', 1, ?5)",
+             VALUES (?1, ?2, ?3, ?4, 'cursor', 'authored-by-author', 'accepted', 1, ?5)",
             rusqlite::params![
                 &uuid::Uuid::now_v7().as_bytes()[..],
                 ws.as_bytes(),
@@ -10199,7 +10199,7 @@ pub(crate) mod tests {
                 workspace_id: ws,
                 project_id: proj,
                 from_session_id: Some(sid),
-                from_agent: AgentKind::ClaudeCode,
+                from_agent: AgentKind::Other,
                 to_agent: None,
                 cwd: None,
                 summary: "authored by canary".into(),
@@ -10220,7 +10220,7 @@ pub(crate) mod tests {
                 workspace_id: ws,
                 project_id: proj,
                 from_session_id: Some(other),
-                from_agent: AgentKind::ClaudeCode,
+                from_agent: AgentKind::Other,
                 to_agent: None,
                 cwd: None,
                 summary: "authored by other, accepted by canary".into(),
@@ -10406,7 +10406,7 @@ pub(crate) mod tests {
                 workspace_id: ws,
                 project_id: other,
                 from_session_id: Some(sid),
-                from_agent: ai_memory_core::AgentKind::ClaudeCode,
+                from_agent: ai_memory_core::AgentKind::Other,
                 to_agent: None,
                 cwd: None,
                 summary: "handoff in other project".into(),
@@ -12097,7 +12097,7 @@ pub(crate) mod tests {
             workspace_id: ws,
             project_id: proj,
             from_session_id: None,
-            from_agent: AgentKind::ClaudeCode,
+            from_agent: AgentKind::Other,
             to_agent: None,
             cwd: None,
             summary: huge.clone(),
@@ -12143,7 +12143,7 @@ pub(crate) mod tests {
             workspace_id: ws,
             project_id: proj,
             from_session_id: None,
-            from_agent: AgentKind::ClaudeCode,
+            from_agent: AgentKind::Other,
             to_agent: None,
             cwd: None,
             summary: "test summary".into(),
@@ -12174,7 +12174,7 @@ pub(crate) mod tests {
             )
             .unwrap();
         assert_eq!(state, "accepted");
-        assert_eq!(accepted_by.as_deref(), Some("codex"));
+        assert_eq!(accepted_by.as_deref(), Some("other"));
 
         // Idempotency: accepting an already-accepted handoff must
         // either succeed silently or fail clearly, never corrupt
@@ -12195,7 +12195,7 @@ pub(crate) mod tests {
                 id: receiver,
                 workspace_id: ws,
                 project_id: proj,
-                agent_kind: AgentKind::Codex,
+                agent_kind: AgentKind::Other,
                 cwd: Some("/repo".into()),
                 actor_user: None,
             },
@@ -12205,7 +12205,7 @@ pub(crate) mod tests {
             workspace_id: ws,
             project_id: proj,
             from_session_id: None,
-            from_agent: AgentKind::ClaudeCode,
+            from_agent: AgentKind::Other,
             to_agent: None,
             cwd: Some("/repo".into()),
             summary: "real pending work".into(),
@@ -12295,7 +12295,7 @@ pub(crate) mod tests {
                 id: receiver,
                 workspace_id: ws,
                 project_id: proj,
-                agent_kind: AgentKind::Codex,
+                agent_kind: AgentKind::Other,
                 cwd: Some("/repo".into()),
                 actor_user: None,
             },
@@ -12307,7 +12307,7 @@ pub(crate) mod tests {
                 workspace_id: ws,
                 project_id: proj,
                 from_session_id: None,
-                from_agent: AgentKind::ClaudeCode,
+                from_agent: AgentKind::Other,
                 to_agent: None,
                 cwd: None,
                 summary: "continue".into(),
@@ -12376,7 +12376,7 @@ pub(crate) mod tests {
                 id: receiver,
                 workspace_id: ws,
                 project_id: proj,
-                agent_kind: AgentKind::OpenCode,
+                agent_kind: AgentKind::Other,
                 cwd: Some("/repo".into()),
                 actor_user: None,
             },
@@ -12423,7 +12423,7 @@ pub(crate) mod tests {
                 id: receiver,
                 workspace_id: ws,
                 project_id: proj,
-                agent_kind: AgentKind::OpenCode,
+                agent_kind: AgentKind::Other,
                 cwd: Some("/repo".into()),
                 actor_user: None,
             },
@@ -12484,7 +12484,7 @@ pub(crate) mod tests {
                     id: session,
                     workspace_id: ws,
                     project_id: proj,
-                    agent_kind: AgentKind::OpenCode,
+                    agent_kind: AgentKind::Other,
                     cwd: None,
                     actor_user: None,
                 },
@@ -12533,7 +12533,7 @@ pub(crate) mod tests {
                 id: first_session,
                 workspace_id: ws,
                 project_id: proj,
-                agent_kind: AgentKind::ClaudeCode,
+                agent_kind: AgentKind::Other,
                 cwd: Some("/repo".into()),
                 actor_user: None,
             },
@@ -12543,7 +12543,7 @@ pub(crate) mod tests {
             workspace_id: ws,
             project_id: proj,
             from_session_id: Some(session_id),
-            from_agent: AgentKind::ClaudeCode,
+            from_agent: AgentKind::Other,
             to_agent: None,
             cwd: Some("/repo".into()),
             summary: "continue".into(),
@@ -12585,7 +12585,7 @@ pub(crate) mod tests {
             workspace_id: ws,
             project_id: proj,
             from_session_id: None,
-            from_agent: AgentKind::ClaudeCode,
+            from_agent: AgentKind::Other,
             to_agent: None,
             cwd: None,
             summary: "s".into(),
@@ -12648,7 +12648,7 @@ pub(crate) mod tests {
             workspace_id: ws,
             project_id: proj,
             from_session_id: None,
-            from_agent: AgentKind::ClaudeCode,
+            from_agent: AgentKind::Other,
             to_agent: None,
             cwd: Some(std::path::PathBuf::from("/home/u/repo/")),
             summary: "trailing slash".into(),
@@ -12671,7 +12671,7 @@ pub(crate) mod tests {
             workspace_id: ws,
             project_id: proj,
             from_session_id: None,
-            from_agent: AgentKind::ClaudeCode,
+            from_agent: AgentKind::Other,
             to_agent: None,
             cwd: Some(std::path::PathBuf::from(r"C:\repo\")),
             summary: "trailing backslash".into(),
@@ -12698,7 +12698,7 @@ pub(crate) mod tests {
             workspace_id: ws,
             project_id: proj,
             from_session_id: None,
-            from_agent: AgentKind::ClaudeCode,
+            from_agent: AgentKind::Other,
             to_agent: None,
             cwd: None,
             summary: "accidental handoff".into(),
@@ -12770,7 +12770,7 @@ pub(crate) mod tests {
                 id: sid,
                 workspace_id: ws,
                 project_id: proj,
-                agent_kind: AgentKind::ClaudeCode,
+                agent_kind: AgentKind::Other,
                 cwd: None,
                 actor_user: None,
             },
@@ -12814,7 +12814,7 @@ pub(crate) mod tests {
                 id: sid,
                 workspace_id: ws,
                 project_id: proj,
-                agent_kind: AgentKind::ClaudeCode,
+                agent_kind: AgentKind::Other,
                 cwd: None,
                 actor_user: None,
             },
@@ -12845,7 +12845,7 @@ pub(crate) mod tests {
                 id: sid,
                 workspace_id: ws,
                 project_id: proj,
-                agent_kind: AgentKind::ClaudeCode,
+                agent_kind: AgentKind::Other,
                 cwd: None,
                 actor_user: None,
             },
@@ -12875,7 +12875,7 @@ pub(crate) mod tests {
                 id: sid,
                 workspace_id: ws,
                 project_id: proj,
-                agent_kind: AgentKind::ClaudeCode,
+                agent_kind: AgentKind::Other,
                 cwd: None,
                 actor_user: None,
             },
@@ -12909,7 +12909,7 @@ pub(crate) mod tests {
                 id: sid,
                 workspace_id: ws,
                 project_id: proj,
-                agent_kind: AgentKind::ClaudeCode,
+                agent_kind: AgentKind::Other,
                 cwd: None,
                 actor_user: None,
             },
@@ -12940,7 +12940,7 @@ pub(crate) mod tests {
                 id: sid,
                 workspace_id: ws,
                 project_id: proj,
-                agent_kind: AgentKind::ClaudeCode,
+                agent_kind: AgentKind::Other,
                 cwd: None,
                 actor_user: None,
             },
@@ -12985,7 +12985,7 @@ pub(crate) mod tests {
                 id: sid,
                 workspace_id: ws,
                 project_id: proj,
-                agent_kind: AgentKind::ClaudeCode,
+                agent_kind: AgentKind::Other,
                 cwd: None,
                 actor_user: None,
             },
@@ -13768,7 +13768,7 @@ pub(crate) mod tests {
                 id: sid,
                 workspace_id: src_ws,
                 project_id: proj,
-                agent_kind: AgentKind::ClaudeCode,
+                agent_kind: AgentKind::Other,
                 cwd: None,
                 actor_user: None,
             },
@@ -13811,9 +13811,9 @@ pub(crate) mod tests {
                 repo_fingerprint: "repo".into(),
                 worktree_fingerprint: "worktree".into(),
                 cwd: "/repo".into(),
-                agent: AgentKind::Codex,
+                agent: AgentKind::Other,
                 automatic_harness: false,
-                available_agents: vec![AgentKind::Codex],
+                available_agents: vec![AgentKind::Other],
                 selection: crate::WorkstreamSelection::Current,
                 lease_owner: "test".into(),
             },
@@ -14065,7 +14065,7 @@ pub(crate) mod tests {
                 id: sid,
                 workspace_id: ws,
                 project_id: proj,
-                agent_kind: AgentKind::ClaudeCode,
+                agent_kind: AgentKind::Other,
                 cwd: Some("/repo/src".into()),
                 actor_user: None,
             },
@@ -14096,7 +14096,7 @@ pub(crate) mod tests {
                 workspace_id: ws,
                 project_id: proj,
                 from_session_id: Some(sid),
-                from_agent: AgentKind::ClaudeCode,
+                from_agent: AgentKind::Other,
                 to_agent: None,
                 cwd: None,
                 summary: "handoff from the movable session".into(),
@@ -15233,7 +15233,7 @@ pub(crate) mod tests {
             &sid,
             &ws,
             &parent,
-            ai_memory_core::AgentKind::ClaudeCode,
+            ai_memory_core::AgentKind::Other,
             Some("/mnt/data/Projects/manga-plus"),
         );
 
@@ -15331,7 +15331,7 @@ pub(crate) mod tests {
                 id: SessionId::new(),
                 workspace_id: ws,
                 project_id: with_data,
-                agent_kind: AgentKind::ClaudeCode,
+                agent_kind: AgentKind::Other,
                 cwd: None,
                 actor_user: None,
             },
@@ -15442,7 +15442,7 @@ pub(crate) mod tests {
             &sid,
             &ws,
             &parent,
-            ai_memory_core::AgentKind::ClaudeCode,
+            ai_memory_core::AgentKind::Other,
             Some("/home/user/tiktok_analysis"),
         );
         for i in 0..4 {
@@ -15535,7 +15535,7 @@ pub(crate) mod tests {
                 &existing_sid,
                 &ws,
                 &proj,
-                ai_memory_core::AgentKind::ClaudeCode,
+                ai_memory_core::AgentKind::Other,
                 None,
             );
             insert_observation(
@@ -15569,7 +15569,7 @@ pub(crate) mod tests {
             &SessionId::new(),
             &ws,
             &proj,
-            ai_memory_core::AgentKind::Grok,
+            ai_memory_core::AgentKind::Other,
             None,
         );
 
@@ -15621,7 +15621,7 @@ pub(crate) mod tests {
                     SessionId::new().as_bytes(),
                     ws.as_bytes(),
                     other_proj.as_bytes(),
-                    ai_memory_core::AgentKind::Grok.as_str(),
+                    ai_memory_core::AgentKind::Other.as_str(),
                     Timestamp::now().as_microsecond(),
                 ],
             )
@@ -15664,7 +15664,7 @@ pub(crate) mod tests {
                 &existing_sid,
                 &ws,
                 &proj,
-                ai_memory_core::AgentKind::ClaudeCode,
+                ai_memory_core::AgentKind::Other,
                 None,
             );
         }
@@ -15682,7 +15682,7 @@ pub(crate) mod tests {
             &SessionId::new(),
             &ws,
             &proj,
-            ai_memory_core::AgentKind::Pi,
+            ai_memory_core::AgentKind::Other,
             None,
         );
 
@@ -15760,7 +15760,7 @@ pub(crate) mod tests {
                 &existing_sid,
                 &ws,
                 &proj,
-                ai_memory_core::AgentKind::ClaudeCode,
+                ai_memory_core::AgentKind::Other,
                 None,
             );
         }
@@ -15781,7 +15781,7 @@ pub(crate) mod tests {
             &SessionId::new(),
             &ws,
             &proj,
-            ai_memory_core::AgentKind::Devin,
+            ai_memory_core::AgentKind::Other,
             None,
         );
 
@@ -15849,7 +15849,7 @@ pub(crate) mod tests {
                     SessionId::new().as_bytes(),
                     ws.as_bytes(),
                     other_proj.as_bytes(),
-                    ai_memory_core::AgentKind::Devin.as_str(),
+                    ai_memory_core::AgentKind::Other.as_str(),
                     Timestamp::now().as_microsecond(),
                 ],
             )
@@ -15922,7 +15922,7 @@ pub(crate) mod tests {
                 workspace_id: ws,
                 project_id: scratch,
                 from_session_id: None,
-                from_agent: AgentKind::ClaudeCode,
+                from_agent: AgentKind::Other,
                 to_agent: None,
                 cwd: None,
                 summary: "standalone".into(),
@@ -16044,7 +16044,7 @@ pub(crate) mod tests {
                     id: bad_sid,
                     workspace_id: other_ws,
                     project_id: proj,
-                    agent_kind: AgentKind::ClaudeCode,
+                    agent_kind: AgentKind::Other,
                     cwd: None,
                     actor_user: None,
                 },
@@ -16061,7 +16061,7 @@ pub(crate) mod tests {
                 id: sid,
                 workspace_id: ws,
                 project_id: proj,
-                agent_kind: AgentKind::ClaudeCode,
+                agent_kind: AgentKind::Other,
                 cwd: None,
                 actor_user: None,
             },
@@ -16103,7 +16103,7 @@ pub(crate) mod tests {
             workspace_id: other_ws,
             project_id: proj,
             from_session_id: None,
-            from_agent: AgentKind::ClaudeCode,
+            from_agent: AgentKind::Other,
             to_agent: None,
             cwd: None,
             summary: "stale".into(),
@@ -16272,7 +16272,7 @@ pub(crate) mod tests {
                 repo_fingerprint: "repo-fp".to_string(),
                 worktree_fingerprint: "worktree-fp".to_string(),
                 cwd: "/tmp/checkout".to_string(),
-                agent: ai_memory_core::AgentKind::ClaudeCode,
+                agent: ai_memory_core::AgentKind::Other,
                 automatic_harness: false,
                 available_agents: Vec::new(),
                 selection: crate::workstream::WorkstreamSelection::Current,
@@ -16849,7 +16849,7 @@ pub(crate) mod tests {
         ] {
             let (_tmp, mut conn, ws, proj) = fresh_db();
             let mut source = hook_session(SessionId::new(), ws, proj, Some("user:alice"));
-            source.agent_kind = AgentKind::OpenCode;
+            source.agent_kind = AgentKind::Other;
             source.cwd = Some(stored_cwd.into());
             begin_session(&mut conn, &source).unwrap();
             if ended {
@@ -16899,7 +16899,7 @@ pub(crate) mod tests {
     fn native_move_rejects_foreign_owner_and_ignores_completed_replay() {
         let (_tmp, mut conn, ws, proj) = fresh_db();
         let mut source = hook_session(SessionId::new(), ws, proj, Some("user:alice"));
-        source.agent_kind = AgentKind::OpenCode;
+        source.agent_kind = AgentKind::Other;
         source.cwd = Some("/repo/alpha".into());
         begin_session(&mut conn, &source).unwrap();
         let target = get_or_create_project(&mut conn, &ws, "beta", None).unwrap();
@@ -17000,7 +17000,7 @@ pub(crate) mod tests {
         ));
 
         let mut other_agent = moved.clone();
-        other_agent.agent_kind = AgentKind::ClaudeCode;
+        other_agent.agent_kind = AgentKind::Cursor;
         let observation = hook_observation(&other_agent);
         assert!(matches!(
             admit_hook_session_event(
@@ -17080,7 +17080,7 @@ pub(crate) mod tests {
                 Some("/repo/app"),
                 Some("/repo/app/"),
                 &alice,
-                AgentKind::OpenCode,
+                AgentKind::Other,
                 Expect::Ended,
             ),
             (
@@ -17088,7 +17088,7 @@ pub(crate) mod tests {
                 Some(r"C:\Repo\App"),
                 Some("c:/repo/app"),
                 &alice,
-                AgentKind::OpenCode,
+                AgentKind::Other,
                 Expect::Ended,
             ),
             (
@@ -17096,7 +17096,7 @@ pub(crate) mod tests {
                 Some("/repo/app"),
                 Some("/repo/app"),
                 &alice,
-                AgentKind::Codex,
+                AgentKind::Other,
                 Expect::Ended,
             ),
             (
@@ -17104,7 +17104,7 @@ pub(crate) mod tests {
                 Some("/repo/app"),
                 Some("/repo/other"),
                 &alice,
-                AgentKind::OpenCode,
+                AgentKind::Other,
                 Expect::Ignored,
             ),
             (
@@ -17112,7 +17112,7 @@ pub(crate) mod tests {
                 Some("/repo/App"),
                 Some("/repo/app"),
                 &alice,
-                AgentKind::OpenCode,
+                AgentKind::Other,
                 Expect::Ignored,
             ),
             (
@@ -17120,7 +17120,7 @@ pub(crate) mod tests {
                 Some("/repo/app"),
                 None,
                 &alice,
-                AgentKind::OpenCode,
+                AgentKind::Other,
                 Expect::Ignored,
             ),
             (
@@ -17128,7 +17128,7 @@ pub(crate) mod tests {
                 None,
                 Some("/repo/app"),
                 &alice,
-                AgentKind::OpenCode,
+                AgentKind::Other,
                 Expect::Ignored,
             ),
             (
@@ -17136,7 +17136,7 @@ pub(crate) mod tests {
                 Some("/repo/app"),
                 Some("/repo/app"),
                 &bob,
-                AgentKind::OpenCode,
+                AgentKind::Other,
                 Expect::Collision,
             ),
             (
@@ -17144,7 +17144,7 @@ pub(crate) mod tests {
                 Some("/repo/app"),
                 Some("/repo/app"),
                 &OwnerFilter::Unattributed,
-                AgentKind::OpenCode,
+                AgentKind::Other,
                 Expect::Collision,
             ),
         ] {
@@ -17221,12 +17221,12 @@ pub(crate) mod tests {
         // Same operator and cwd, but another agent reusing the id.
         let (_tmp, mut conn, ws, proj) = fresh_db();
         let mut session = hook_session(SessionId::new(), ws, proj, Some("user:alice"));
-        session.agent_kind = AgentKind::OpenCode;
+        session.agent_kind = AgentKind::Other;
         session.cwd = Some("/repo/app".into());
         begin_session(&mut conn, &session).unwrap();
         let mut drifted = session.clone();
         drifted.project_id = get_or_create_project(&mut conn, &ws, "marker", None).unwrap();
-        drifted.agent_kind = AgentKind::ClaudeCode;
+        drifted.agent_kind = AgentKind::Cursor;
         let end = session_end_observation(&drifted);
         assert!(matches!(
             admit_hook_session_event(&mut conn, &drifted, &end, &alice, None, None),
@@ -17308,7 +17308,7 @@ pub(crate) mod tests {
         let alice_session = hook_session(session.id, ws, proj, Some("user:alice"));
         begin_session(&mut conn, &alice_session).unwrap();
         let mut agent_mismatch = alice_session.clone();
-        agent_mismatch.agent_kind = AgentKind::ClaudeCode;
+        agent_mismatch.agent_kind = AgentKind::Cursor;
         let observation = hook_observation(&alice_session);
         assert!(matches!(
             admit_hook_session_event(
@@ -17556,7 +17556,7 @@ pub(crate) mod tests {
             workspace_id: ws,
             project_id: proj,
             from_session_id: Some(session.id),
-            from_agent: AgentKind::Codex,
+            from_agent: AgentKind::Other,
             to_agent: None,
             cwd: None,
             summary: "x".into(),
@@ -17588,7 +17588,7 @@ pub(crate) mod tests {
             workspace_id: ws,
             project_id: proj,
             from_session_id: None,
-            from_agent: AgentKind::ClaudeCode,
+            from_agent: AgentKind::Other,
             to_agent: None,
             cwd: None,
             summary: "x".into(),

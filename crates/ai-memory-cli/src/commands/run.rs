@@ -748,7 +748,7 @@ async fn run_once_with_wiring(
     } else {
         provisional_harness
     };
-    let harness = if resolved_harness.agent_kind() == AgentKind::KiroCli {
+    let harness = if resolved_harness.agent_kind() == AgentKind::Other {
         acquired_try!(resolve_kiro_harness(
             &native_args,
             prepared.native_session_id.as_deref(),
@@ -2940,7 +2940,7 @@ fn automatic_harness_flavor(
     opencode_harness: Option<ManagedHarness>,
 ) -> ManagedHarness {
     if selected == ManagedHarness::Kiro
-        && provisional.agent_kind() == AgentKind::KiroCli
+        && provisional.agent_kind() == AgentKind::Other
         && linked_session_id.is_none()
     {
         provisional
@@ -3637,21 +3637,11 @@ async fn prepare_previous_session_history(
 }
 
 fn previous_harness_candidates(agent: AgentKind) -> &'static [ManagedHarness] {
-    match agent {
-        AgentKind::ClaudeCode => &[ManagedHarness::Claude],
-        AgentKind::Codex => &[ManagedHarness::Codex],
-        AgentKind::OpenCode => &[ManagedHarness::OpenCode2, ManagedHarness::OpenCode],
-        AgentKind::Pi => &[ManagedHarness::Pi],
-        AgentKind::Crush => &[ManagedHarness::Crush],
-        AgentKind::Omp => &[ManagedHarness::Omp],
-        AgentKind::KimiCode => &[ManagedHarness::Kimi],
-        AgentKind::CommandCode => &[ManagedHarness::CommandCode],
-        AgentKind::KiroCli => &[ManagedHarness::KiroV3, ManagedHarness::Kiro],
-        AgentKind::Grok => &[ManagedHarness::Grok],
-        AgentKind::AntigravityCli => &[ManagedHarness::Antigravity],
-        AgentKind::CopilotCli => &[ManagedHarness::Copilot],
-        _ => &[],
-    }
+    // Phase 2 keeps `ai-memory run` compiling but Cursor Desktop's own
+    // transcript projection is not yet wired up — that lands in Phase 3.
+    // `Other` has no managed-harness ancestry.
+    let _ = agent;
+    &[]
 }
 
 fn render_previous_session_history(
@@ -4440,20 +4430,11 @@ fn managed_harness_for_args(choice: RunHarnessChoice, native_args: &[OsString]) 
 }
 
 const fn managed_harness_from_agent(agent: AgentKind) -> Option<ManagedHarness> {
-    match agent {
-        AgentKind::ClaudeCode => Some(ManagedHarness::Claude),
-        AgentKind::Codex => Some(ManagedHarness::Codex),
-        AgentKind::OpenCode => Some(ManagedHarness::OpenCode),
-        AgentKind::Pi => Some(ManagedHarness::Pi),
-        AgentKind::Crush => Some(ManagedHarness::Crush),
-        AgentKind::KimiCode => Some(ManagedHarness::Kimi),
-        AgentKind::CommandCode => Some(ManagedHarness::CommandCode),
-        AgentKind::KiroCli => Some(ManagedHarness::Kiro),
-        AgentKind::Grok => Some(ManagedHarness::Grok),
-        AgentKind::AntigravityCli => Some(ManagedHarness::Antigravity),
-        AgentKind::CopilotCli => Some(ManagedHarness::Copilot),
-        _ => None,
-    }
+    // The Cursor-only server has no advertised managed-harness mapping yet;
+    // Phase 3 wires one up for Cursor Desktop. For now, no `AgentKind` maps
+    // to a managed harness.
+    let _ = agent;
+    None
 }
 
 /// Parse the exact harness names the recovery journal writes
@@ -5729,7 +5710,7 @@ mod tests {
                         workstream_id: WorkstreamId::new(),
                         workstream_name: "default".into(),
                         run_id: ManagedRunId::new(),
-                        resolved_agent: Some(AgentKind::Codex),
+                        resolved_agent: Some(AgentKind::Other),
                         native_session_id: None,
                         source_cursor: None,
                         previous_native_session: None,
@@ -5752,7 +5733,7 @@ mod tests {
             cwd: "/tmp/project".into(),
             repo_fingerprint: "repo".into(),
             worktree_fingerprint: "worktree".into(),
-            agent: AgentKind::Codex,
+            agent: AgentKind::Other,
             automatic_harness: false,
             available_agents: Vec::new(),
             workstream: None,
@@ -5884,7 +5865,7 @@ mod tests {
                         workstream_id: WorkstreamId::new(),
                         workstream_name: "default".into(),
                         run_id: ManagedRunId::new(),
-                        resolved_agent: Some(AgentKind::Codex),
+                        resolved_agent: Some(AgentKind::Other),
                         native_session_id: None,
                         source_cursor: None,
                         previous_native_session: None,
@@ -6003,7 +5984,7 @@ mod tests {
                         workstream_id: WorkstreamId::new(),
                         workstream_name: "default".into(),
                         run_id: ManagedRunId::new(),
-                        resolved_agent: Some(AgentKind::ClaudeCode),
+                        resolved_agent: Some(AgentKind::Other),
                         native_session_id: None,
                         source_cursor: None,
                         previous_native_session: None,
@@ -6026,7 +6007,7 @@ mod tests {
             cwd: "/tmp/project".into(),
             repo_fingerprint: "repo".into(),
             worktree_fingerprint: "worktree".into(),
-            agent: AgentKind::ClaudeCode,
+            agent: AgentKind::Other,
             automatic_harness: false,
             available_agents: Vec::new(),
             workstream: None,
@@ -6401,35 +6382,6 @@ mod tests {
     }
 
     #[test]
-    fn copilot_aliases_select_the_managed_adapter() {
-        for name in ["copilot", "copilot-cli"] {
-            let cli = Cli::try_parse_from([
-                OsStr::new("ai-memory"),
-                OsStr::new("run"),
-                OsStr::new(name),
-                OsStr::new("--model"),
-                OsStr::new("gpt-5.6"),
-            ])
-            .unwrap();
-            let CliCommand::Run(args) = cli.command else {
-                panic!("expected run command");
-            };
-            let choice = args.harness.expect("explicit harness");
-            assert_eq!(choice, crate::cli::RunHarnessChoice::Copilot, "{name}");
-            assert_eq!(managed_harness(choice), ManagedHarness::Copilot);
-            assert_eq!(run_harness_choice(ManagedHarness::Copilot), choice);
-            assert_eq!(
-                args.native_args,
-                ["--model", "gpt-5.6"].map(OsString::from).to_vec()
-            );
-        }
-        assert_eq!(
-            managed_harness_from_agent(AgentKind::CopilotCli),
-            Some(ManagedHarness::Copilot)
-        );
-    }
-
-    #[test]
     fn command_code_aliases_select_the_managed_adapter() {
         for name in ["command-code", "commandcode", "cmdc", "cmd"] {
             let cli = Cli::try_parse_from([
@@ -6560,7 +6512,7 @@ mod tests {
             },
         ];
 
-        assert_eq!(unique_auto_agents(&candidates), [AgentKind::KiroCli]);
+        assert_eq!(unique_auto_agents(&candidates), [AgentKind::Other]);
         assert_eq!(
             automatic_harness_flavor(ManagedHarness::Kiro, ManagedHarness::KiroV3, None, None,),
             ManagedHarness::KiroV3
@@ -6949,69 +6901,6 @@ mod tests {
             plan.session_dir.as_deref(),
             Some(Path::new("/accounts/work/projects"))
         );
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn previous_session_history_is_private_local_and_checkout_scoped() {
-        let temp = tempfile::tempdir().unwrap();
-        let home = temp.path().join("home");
-        let repo = temp.path().join("repo");
-        let foreign = temp.path().join("foreign");
-        std::fs::create_dir_all(&repo).unwrap();
-        std::fs::create_dir_all(&foreign).unwrap();
-        let session = "94e41265-4001-431c-828e-1c54953e596b";
-        let bucket: String = repo
-            .to_string_lossy()
-            .chars()
-            .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
-            .collect();
-        let transcript_dir = home.join(".claude/projects").join(bucket);
-        std::fs::create_dir_all(&transcript_dir).unwrap();
-        let record = serde_json::json!({
-            "type": "user",
-            "uuid": "record-1",
-            "sessionId": session,
-            "cwd": repo,
-            "message": {"role": "user", "content": "finish the migration"}
-        });
-        std::fs::write(
-            transcript_dir.join(format!("{session}.jsonl")),
-            format!("{record}\n"),
-        )
-        .unwrap();
-
-        let mut config = Config::load(None, Some(temp.path().join("data"))).unwrap();
-        config.home_dir = Some(home.to_string_lossy().into_owned());
-        let env = EffectiveChildEnv::from_runtime(&config.runtime_env);
-        let endpoint = ServerEndpoint::from_pair(Some("http://memory.example".into()), None);
-        let previous = ManagedNativeSessionReference {
-            agent: AgentKind::ClaudeCode,
-            native_session_id: session.into(),
-        };
-        let history =
-            prepare_previous_session_history(&config, &endpoint, &previous, &home, &repo, &env)
-                .await
-                .unwrap()
-                .unwrap();
-        let path = history.path().to_path_buf();
-        let rendered = std::fs::read_to_string(&path).unwrap();
-        assert!(rendered.contains("finish the migration"));
-        assert!(rendered.contains("untrusted local history"));
-        assert!(rendered.contains("Harness: `claude`"));
-        assert!(path.starts_with(std::env::temp_dir()));
-
-        let foreign_error =
-            prepare_previous_session_history(&config, &endpoint, &previous, &home, &foreign, &env)
-                .await
-                .unwrap_err();
-        assert!(
-            foreign_error
-                .to_string()
-                .contains("unavailable in this client's native stores")
-        );
-        drop(history);
-        assert!(!path.exists(), "the local dossier must die with the run");
     }
 
     #[cfg(unix)]
@@ -7633,7 +7522,7 @@ mod tests {
                         workstream_id: WorkstreamId::new(),
                         workstream_name: "default".into(),
                         run_id: ManagedRunId::new(),
-                        resolved_agent: Some(AgentKind::ClaudeCode),
+                        resolved_agent: Some(AgentKind::Other),
                         native_session_id: None,
                         source_cursor: None,
                         previous_native_session: None,
@@ -8225,7 +8114,7 @@ mod tests {
         let status = |linked: bool, native: &str| ManagedRunStatus {
             run_id: ManagedRunId::new(),
             workstream_id: WorkstreamId::new(),
-            agent: AgentKind::Codex,
+            agent: AgentKind::Other,
             native_session_id: Some(native.to_string()),
             native_session_linked: linked,
             context_delivered: true,
@@ -8403,7 +8292,7 @@ mod tests {
         let status = ManagedRunStatus {
             run_id: ManagedRunId::new(),
             workstream_id: WorkstreamId::new(),
-            agent: AgentKind::Crush,
+            agent: AgentKind::Other,
             native_session_id: Some("prepared".to_string()),
             native_session_linked: false,
             context_delivered: false,
@@ -9542,121 +9431,6 @@ mod tests {
         );
     }
 
-    /// Harnesses without a native session-end hook get their session closed
-    /// when the managed run ends (#941): the exact session is looked up by the
-    /// stored id its native id maps to, and a synthetic session-end is posted.
-    /// Harnesses with their own hook, and runs with no session, are left alone.
-    #[tokio::test]
-    async fn run_end_finalizes_the_session_of_a_hookless_harness() {
-        use std::sync::Mutex;
-
-        use axum::extract::{Query, State};
-        use axum::routing::get;
-
-        use crate::config::Config;
-
-        #[derive(Default)]
-        struct Seen {
-            lookups: Vec<std::collections::HashMap<String, String>>,
-            batches: Vec<serde_json::Value>,
-        }
-        let seen = Arc::new(Mutex::new(Seen::default()));
-        let app = Router::new()
-            .route(
-                "/admin/open-sessions",
-                get(
-                    |State(seen): State<Arc<Mutex<Seen>>>,
-                     Query(query): Query<std::collections::HashMap<String, String>>| async move {
-                        let session_id = query.get("session_id").cloned().unwrap_or_default();
-                        seen.lock().unwrap().lookups.push(query);
-                        axum::Json(serde_json::json!({
-                            "sessions": [{ "session_id": session_id, "cwd": "/tmp/repo" }]
-                        }))
-                    },
-                ),
-            )
-            .route(
-                "/hook/batch",
-                post(
-                    |State(seen): State<Arc<Mutex<Seen>>>, axum::Json(body): axum::Json<serde_json::Value>| async move {
-                        seen.lock().unwrap().batches.push(body);
-                        axum::Json(serde_json::json!({ "accepted": 1 }))
-                    },
-                ),
-            )
-            .with_state(seen.clone());
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-
-        let home = tempfile::tempdir().unwrap();
-        let data = tempfile::tempdir().unwrap();
-        let mut config = Config::load(None, Some(home.path().to_path_buf())).unwrap();
-        config.data_dir = data.path().to_path_buf();
-        config.server_url = format!("http://{address}");
-
-        assert!(
-            finalize_hookless_session(
-                &config,
-                ManagedHarness::Claude,
-                Some("claude-1"),
-                "ws",
-                "proj"
-            )
-            .await
-            .is_none()
-        );
-        assert!(
-            finalize_hookless_session(&config, ManagedHarness::Antigravity, None, "ws", "proj")
-                .await
-                .is_none()
-        );
-        assert!(
-            seen.lock().unwrap().lookups.is_empty(),
-            "nothing to finalize yet"
-        );
-
-        let (session, finalized) = finalize_hookless_session(
-            &config,
-            ManagedHarness::Antigravity,
-            Some("agy-session-1"),
-            "ws",
-            "proj",
-        )
-        .await
-        .expect("a hookless harness with its own session is finalized");
-        let stored = SessionId::from_native("agy-session-1").to_string();
-        assert_eq!(session.to_string(), stored);
-        assert_eq!(finalized.unwrap(), vec![stored.clone()]);
-        let seen = seen.lock().unwrap();
-        assert_eq!(seen.lookups.len(), 1, "one exact-session lookup");
-        let lookup = &seen.lookups[0];
-        assert_eq!(
-            lookup.get("session_id"),
-            Some(&stored),
-            "looked up by the stored id"
-        );
-        assert_eq!(
-            lookup.get("agent").map(String::as_str),
-            Some("antigravity-cli")
-        );
-        assert_eq!(lookup.get("workspace").map(String::as_str), Some("ws"));
-        assert_eq!(lookup.get("project").map(String::as_str), Some("proj"));
-        assert_eq!(
-            lookup.get("include_ended").map(String::as_str),
-            Some("true"),
-            "a resumed session that was already ended is ended again"
-        );
-        assert_eq!(seen.batches.len(), 1, "one synthetic session-end batch");
-        assert!(
-            seen.batches[0].to_string().contains(&stored),
-            "the session-end targets that session: {}",
-            seen.batches[0]
-        );
-        drop(seen);
-        server.abort();
-    }
-
     #[test]
     fn native_identity_run_preflight_refuses_before_resume_or_private_path() {
         let home = tempfile::tempdir().unwrap();
@@ -9789,7 +9563,7 @@ mod tests {
             let mut with_event = transcript("vendor-界-01");
             with_event.events.push(ai_memory_core::NewWorkstreamEvent {
                 event_id: "e".into(),
-                agent: AgentKind::Codex,
+                agent: AgentKind::Other,
                 native_session_id: bad.into(),
                 source_record_id: None,
                 kind: ai_memory_core::WorkstreamEventKind::Message,
@@ -9878,7 +9652,7 @@ mod tests {
         let event = |kind, content: String, metadata: serde_json::Value| {
             ai_memory_core::NewWorkstreamEvent {
                 event_id: format!("e-{}", content.len()),
-                agent: AgentKind::ClaudeCode,
+                agent: AgentKind::Other,
                 native_session_id: "sid-1".into(),
                 source_record_id: None,
                 kind,
@@ -9941,100 +9715,6 @@ mod tests {
         );
     }
 
-    /// Codex records its shell tool as `exec_command` with `{cmd, workdir}`,
-    /// which hooks receive as `Bash`. The ledger upload inspects it as that
-    /// shell call: a command whose `workdir`-relative argument names an ignored
-    /// path never reaches the finish request, while the same command run from
-    /// a public directory does.
-    #[tokio::test]
-    async fn ledger_upload_inspects_codex_exec_command_as_the_hook_shell_call() {
-        let requests = Arc::new(std::sync::Mutex::new(Vec::<FinishManagedRunRequest>::new()));
-        let captured = requests.clone();
-        let app = Router::new().route(
-            "/workstream/runs/{id}/finish",
-            post(
-                move |axum::Json(request): axum::Json<FinishManagedRunRequest>| {
-                    let captured = captured.clone();
-                    async move {
-                        let imported_events = request.events.len();
-                        captured.lock().unwrap().push(request);
-                        axum::Json(FinishManagedRunResponse {
-                            imported_events,
-                            latest_sequence: 1,
-                        })
-                    }
-                },
-            ),
-        );
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        let home = tempfile::tempdir().unwrap();
-        let config = launch_config(home.path(), home.path(), address);
-        let endpoint = ServerEndpoint::from_config_resolving_auth(&config).await;
-        let repo = tempfile::tempdir().unwrap();
-        std::fs::write(
-            repo.path().join(".ai-memory.toml"),
-            "[capture]\nignore_paths = [\"docs/adr/**\"]\n",
-        )
-        .unwrap();
-        let event = |kind, content: String, id: &str| ai_memory_core::NewWorkstreamEvent {
-            event_id: format!("e-{id}-{}", content.len()),
-            agent: AgentKind::Codex,
-            native_session_id: "sid-1".into(),
-            source_record_id: None,
-            kind,
-            role: None,
-            content,
-            occurred_at: None,
-            metadata: serde_json::json!({"tool": "exec_command", "tool_use_id": id}),
-        };
-        let exec = |workdir: &str, id: &str| {
-            event(
-                ai_memory_core::WorkstreamEventKind::ToolCall,
-                format!(
-                    "exec_command: {}",
-                    serde_json::json!({"cmd": "cat adr/x.md", "workdir": repo.path().join(workdir)})
-                ),
-                id,
-            )
-        };
-        let output = |text: &str, id: &str| {
-            event(
-                ai_memory_core::WorkstreamEventKind::ToolResult,
-                text.into(),
-                id,
-            )
-        };
-        let transcript = ExportedTranscript {
-            native_session_id: "sid-1".into(),
-            source_cursor: Some("cursor".into()),
-            events: vec![
-                exec("docs", "adr"),
-                output("ADRSENTINEL private decision", "adr"),
-                exec("src", "pub"),
-                output("PUBLICCONTROL public note", "pub"),
-            ],
-            losses: Vec::new(),
-        };
-        let imported = import_batches(
-            &endpoint,
-            "/workstream/runs/test",
-            transcript,
-            Default::default(),
-            Some(0),
-            &Sanitizer::builtin(),
-            &TranscriptCapture::for_checkout(home.path(), repo.path()),
-        )
-        .await
-        .unwrap();
-        server.abort();
-        let posted = serde_json::to_string(&*requests.lock().unwrap()).unwrap();
-        assert!(!posted.contains("ADRSENTINEL"), "excluded output: {posted}");
-        assert!(posted.contains("PUBLICCONTROL"), "public output: {posted}");
-        assert_eq!(imported, 2, "only the public call and its output: {posted}");
-    }
-
     /// Allowlist capture mode (#446): the live hook emits nothing from an
     /// unmarked checkout, so its run ledger upload carries no events — no
     /// prompt, no tool content — while still finishing the run. A marked
@@ -10082,7 +9762,7 @@ mod tests {
             events: vec![
                 ai_memory_core::NewWorkstreamEvent {
                     event_id: "prompt".into(),
-                    agent: AgentKind::ClaudeCode,
+                    agent: AgentKind::Other,
                     native_session_id: "sid-1".into(),
                     source_record_id: None,
                     kind: ai_memory_core::WorkstreamEventKind::Message,
@@ -10093,7 +9773,7 @@ mod tests {
                 },
                 ai_memory_core::NewWorkstreamEvent {
                     event_id: "tool".into(),
-                    agent: AgentKind::ClaudeCode,
+                    agent: AgentKind::Other,
                     native_session_id: "sid-1".into(),
                     source_record_id: None,
                     kind: ai_memory_core::WorkstreamEventKind::ToolCall,
@@ -10174,7 +9854,7 @@ mod tests {
             let status = ManagedRunStatus {
                 run_id: ManagedRunId::new(),
                 workstream_id: WorkstreamId::new(),
-                agent: AgentKind::Codex,
+                agent: AgentKind::Other,
                 native_session_id: Some(bad.into()),
                 native_session_linked: true,
                 context_delivered: false,
@@ -10285,7 +9965,7 @@ mod tests {
                         axum::Json(ManagedRunStatus {
                             run_id: ManagedRunId::new(),
                             workstream_id: WorkstreamId::new(),
-                            agent: AgentKind::Codex,
+                            agent: AgentKind::Other,
                             native_session_id: Some(id.into()),
                             native_session_linked: false,
                             context_delivered: false,

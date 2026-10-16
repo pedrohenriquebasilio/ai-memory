@@ -8443,7 +8443,7 @@ mod tests {
                 id: sid,
                 workspace_id: ws,
                 project_id: src,
-                agent_kind: ai_memory_core::AgentKind::ClaudeCode,
+                agent_kind: ai_memory_core::AgentKind::Other,
                 cwd: Some("/repo/src".into()),
                 actor_user: None,
             })
@@ -8607,7 +8607,7 @@ mod tests {
                 id: sid,
                 workspace_id: ws,
                 project_id: proj,
-                agent_kind: ai_memory_core::AgentKind::Codex,
+                agent_kind: ai_memory_core::AgentKind::Other,
                 cwd: None,
                 actor_user: Some("user:purge-owner".into()),
             })

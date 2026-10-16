@@ -1381,7 +1381,7 @@ fn parse_claude(
         if let Some(text) = first_string(value, &["summary", "content", "text"]) {
             push_event(
                 events,
-                AgentKind::ClaudeCode,
+                AgentKind::Other,
                 session,
                 record_id,
                 0,
@@ -1413,7 +1413,7 @@ fn parse_claude(
         if !text.is_empty() {
             push_event(
                 events,
-                AgentKind::ClaudeCode,
+                AgentKind::Other,
                 session,
                 record_id,
                 0,
@@ -1431,7 +1431,7 @@ fn parse_claude(
         return;
     }
     parse_content_blocks(
-        AgentKind::ClaudeCode,
+        AgentKind::Other,
         session,
         record_id,
         role,
@@ -1515,7 +1515,7 @@ fn parse_codex(
         if let Some(summary) = first_string(payload, &["message", "summary", "content", "text"]) {
             push_event(
                 events,
-                AgentKind::Codex,
+                AgentKind::Other,
                 session,
                 record_id,
                 0,
@@ -1545,7 +1545,7 @@ fn parse_codex(
                 return;
             }
             parse_content_blocks(
-                AgentKind::Codex,
+                AgentKind::Other,
                 session,
                 record_id,
                 role,
@@ -1560,7 +1560,7 @@ fn parse_codex(
             let body = first_string(payload, &["arguments", "input", "text"]).unwrap_or("");
             push_event(
                 events,
-                AgentKind::Codex,
+                AgentKind::Other,
                 session,
                 record_id,
                 0,
@@ -1575,7 +1575,7 @@ fn parse_codex(
             let body = first_string(payload, &["output", "content", "text"]).unwrap_or("");
             push_event(
                 events,
-                AgentKind::Codex,
+                AgentKind::Other,
                 session,
                 record_id,
                 0,
@@ -1590,7 +1590,7 @@ fn parse_codex(
             let action = payload.get("action").map(compact_json).unwrap_or_default();
             push_event(
                 events,
-                AgentKind::Codex,
+                AgentKind::Other,
                 session,
                 record_id,
                 0,
@@ -1605,7 +1605,7 @@ fn parse_codex(
             let body = first_string(payload, &["summary", "content", "text"]).unwrap_or("");
             push_event(
                 events,
-                AgentKind::Codex,
+                AgentKind::Other,
                 session,
                 record_id,
                 0,
@@ -1792,7 +1792,7 @@ fn parse_kimi(
                             .unwrap_or_default();
                         push_event(
                             events,
-                            AgentKind::KimiCode,
+                            AgentKind::Other,
                             session,
                             record_id,
                             block_count + index,
@@ -1809,7 +1809,7 @@ fn parse_kimi(
                     let body = texts.parts.join("\n");
                     push_event(
                         events,
-                        AgentKind::KimiCode,
+                        AgentKind::Other,
                         session,
                         record_id,
                         0,
@@ -1837,7 +1837,7 @@ fn parse_kimi(
                             if let Some(text) = first_string(part, &["text", "content"]) {
                                 push_event(
                                     events,
-                                    AgentKind::KimiCode,
+                                    AgentKind::Other,
                                     session,
                                     record_id,
                                     0,
@@ -1864,7 +1864,7 @@ fn parse_kimi(
                     let arguments = event.get("args").map(compact_json).unwrap_or_default();
                     push_event(
                         events,
-                        AgentKind::KimiCode,
+                        AgentKind::Other,
                         session,
                         record_id,
                         0,
@@ -1884,7 +1884,7 @@ fn parse_kimi(
                         kimi_content_parts(result.get("output").unwrap_or(&Value::Null), losses);
                     push_event(
                         events,
-                        AgentKind::KimiCode,
+                        AgentKind::Other,
                         session,
                         record_id,
                         0,
@@ -1905,7 +1905,7 @@ fn parse_kimi(
             if let Some(summary) = value.get("summary").and_then(Value::as_str) {
                 push_event(
                     events,
-                    AgentKind::KimiCode,
+                    AgentKind::Other,
                     session,
                     record_id,
                     0,
@@ -1954,7 +1954,7 @@ fn parse_command_code(
         };
         push_event(
             events,
-            AgentKind::CommandCode,
+            AgentKind::Other,
             session,
             record_id,
             0,
@@ -2016,7 +2016,7 @@ fn parse_command_code(
                 };
                 push_event(
                     events,
-                    AgentKind::CommandCode,
+                    AgentKind::Other,
                     session,
                     record_id,
                     index,
@@ -2036,7 +2036,7 @@ fn parse_command_code(
                 };
                 push_event(
                     events,
-                    AgentKind::CommandCode,
+                    AgentKind::Other,
                     session,
                     record_id,
                     index,
@@ -2063,7 +2063,7 @@ fn parse_command_code(
                 };
                 push_event(
                     events,
-                    AgentKind::CommandCode,
+                    AgentKind::Other,
                     session,
                     record_id,
                     index,
@@ -2133,7 +2133,7 @@ fn parse_command_code_tool_result(
     }
     push_event(
         events,
-        AgentKind::CommandCode,
+        AgentKind::Other,
         session,
         record_id,
         block,
@@ -2168,7 +2168,7 @@ fn parse_kimi_parts(
     for (index, text) in texts.parts.iter().enumerate() {
         push_event(
             events,
-            AgentKind::KimiCode,
+            AgentKind::Other,
             session,
             record_id,
             index,
@@ -2281,7 +2281,7 @@ fn parse_kiro(
                         if let Some(text) = part.get("data").and_then(Value::as_str) {
                             push_event(
                                 events,
-                                AgentKind::KiroCli,
+                                AgentKind::Other,
                                 session,
                                 record_id,
                                 index,
@@ -2307,7 +2307,7 @@ fn parse_kiro(
                         if let Some(text) = part.get("data").and_then(Value::as_str) {
                             push_event(
                                 events,
-                                AgentKind::KiroCli,
+                                AgentKind::Other,
                                 session,
                                 record_id,
                                 index,
@@ -2331,7 +2331,7 @@ fn parse_kiro(
                             .unwrap_or_else(|| compact_json(tool));
                         push_event(
                             events,
-                            AgentKind::KiroCli,
+                            AgentKind::Other,
                             session,
                             record_id,
                             index,
@@ -2363,7 +2363,7 @@ fn parse_kiro(
                     .unwrap_or_else(|| compact_json(result));
                 push_event(
                     events,
-                    AgentKind::KiroCli,
+                    AgentKind::Other,
                     session,
                     record_id,
                     index,
@@ -2407,7 +2407,7 @@ fn parse_kiro_v3(
             if let Some(content) = payload.get("content").and_then(Value::as_str) {
                 push_event(
                     events,
-                    AgentKind::KiroCli,
+                    AgentKind::Other,
                     session,
                     record_id,
                     0,
@@ -2429,7 +2429,7 @@ fn parse_kiro_v3(
             if let Some(content) = payload.get("content").and_then(Value::as_str) {
                 push_event(
                     events,
-                    AgentKind::KiroCli,
+                    AgentKind::Other,
                     session,
                     record_id,
                     0,
@@ -2449,7 +2449,7 @@ fn parse_kiro_v3(
             let arguments = payload.get("args").map(compact_json).unwrap_or_default();
             push_event(
                 events,
-                AgentKind::KiroCli,
+                AgentKind::Other,
                 session,
                 record_id,
                 0,
@@ -2469,7 +2469,7 @@ fn parse_kiro_v3(
             };
             push_event(
                 events,
-                AgentKind::KiroCli,
+                AgentKind::Other,
                 session,
                 record_id,
                 0,
@@ -2569,7 +2569,7 @@ fn parse_grok(
         }
         "user" => {
             parse_content_blocks(
-                AgentKind::Grok,
+                AgentKind::Other,
                 session,
                 record_id,
                 "user",
@@ -2583,7 +2583,7 @@ fn parse_grok(
             let block_count = if let Some(text) = value.get("content").and_then(Value::as_str) {
                 push_event(
                     events,
-                    AgentKind::Grok,
+                    AgentKind::Other,
                     session,
                     record_id,
                     0,
@@ -2615,7 +2615,7 @@ fn parse_grok(
                     .unwrap_or_default();
                 push_event(
                     events,
-                    AgentKind::Grok,
+                    AgentKind::Other,
                     session,
                     record_id,
                     block_count + index,
@@ -2631,7 +2631,7 @@ fn parse_grok(
             let body = value.get("content").map(value_text).unwrap_or_default();
             push_event(
                 events,
-                AgentKind::Grok,
+                AgentKind::Other,
                 session,
                 record_id,
                 0,
@@ -2648,7 +2648,7 @@ fn parse_grok(
             let action = kind.get("action").map(compact_json).unwrap_or_default();
             push_event(
                 events,
-                AgentKind::Grok,
+                AgentKind::Other,
                 session,
                 record_id,
                 0,
@@ -2693,7 +2693,7 @@ fn parse_copilot(
             if let Some(text) = data.get("content").and_then(Value::as_str) {
                 push_event(
                     events,
-                    AgentKind::CopilotCli,
+                    AgentKind::Other,
                     session,
                     record_id,
                     0,
@@ -2716,7 +2716,7 @@ fn parse_copilot(
                 Some(text) if !text.trim().is_empty() => {
                     push_event(
                         events,
-                        AgentKind::CopilotCli,
+                        AgentKind::Other,
                         session,
                         record_id,
                         0,
@@ -2742,7 +2742,7 @@ fn parse_copilot(
                     .unwrap_or_default();
                 push_event(
                     events,
-                    AgentKind::CopilotCli,
+                    AgentKind::Other,
                     session,
                     record_id,
                     block_count + index,
@@ -2773,7 +2773,7 @@ fn parse_copilot(
             };
             push_event(
                 events,
-                AgentKind::CopilotCli,
+                AgentKind::Other,
                 session,
                 record_id,
                 0,
@@ -2793,7 +2793,7 @@ fn parse_copilot(
             {
                 push_event(
                     events,
-                    AgentKind::CopilotCli,
+                    AgentKind::Other,
                     session,
                     record_id,
                     0,
@@ -2930,7 +2930,7 @@ fn parse_content_blocks(
 }
 
 fn claude_managed_packet_echo(agent: AgentKind, body: &str) -> bool {
-    if agent != AgentKind::ClaudeCode {
+    if agent != AgentKind::Other {
         return false;
     }
     let body = body.trim_start();
@@ -2942,28 +2942,19 @@ fn codex_synthetic_context(agent: AgentKind, role: &str, text: &str) -> bool {
     if role != "user" {
         return false;
     }
+    let _ = agent;
+    // Phase 2 collapsed the per-harness branches into a single text-pattern
+    // check that works for any legacy transcript the `Other` adapters still
+    // import: Codex instruction blocks and permission prompts, Claude Code
+    // system reminders, and Grok's `user_info` scaffolding. Cursor Desktop's
+    // own transcript model lands in Phase 3.
     let trimmed = text.trim_start();
-    match agent {
-        AgentKind::Codex => {
-            ai_memory_core::looks_like_codex_instructions(trimmed)
-                || trimmed.starts_with("<environment_context>")
-                || trimmed.starts_with("<permissions instructions>")
-                || trimmed.starts_with("<INSTRUCTIONS>")
-        }
-        AgentKind::ClaudeCode => trimmed.starts_with("<system-reminder>"),
-        // Grok stores harness scaffolding inside `user` records rather than a
-        // separate record type: an environment block, then Claude-style
-        // reminders carrying project instructions, the skills catalogue, and
-        // the connected MCP servers. A single session's reminders measured
-        // 42KB against 270 bytes of real input, so importing them both leaks
-        // harness internals into the portable ledger and evicts real
-        // conversation from the startup packet budget. Genuine input arrives
-        // wrapped in `<user_query>`.
-        AgentKind::Grok => {
-            trimmed.starts_with("<user_info>") || trimmed.starts_with("<system-reminder>")
-        }
-        _ => false,
-    }
+    ai_memory_core::looks_like_codex_instructions(trimmed)
+        || trimmed.starts_with("<environment_context>")
+        || trimmed.starts_with("<permissions instructions>")
+        || trimmed.starts_with("<INSTRUCTIONS>")
+        || trimmed.starts_with("<system-reminder>")
+        || trimmed.starts_with("<user_info>")
 }
 
 #[cfg(test)]
@@ -3210,7 +3201,7 @@ fn parse_crush_parts(
                 if let Some(content) = first_string(data, &["text", "content"]) {
                     push_event(
                         events,
-                        AgentKind::Crush,
+                        AgentKind::Other,
                         session,
                         message_id,
                         index,
@@ -3235,7 +3226,7 @@ fn parse_crush_parts(
                 let input = data.get("input").map(value_text).unwrap_or_default();
                 push_event(
                     events,
-                    AgentKind::Crush,
+                    AgentKind::Other,
                     session,
                     message_id,
                     index,
@@ -3255,7 +3246,7 @@ fn parse_crush_parts(
                     .unwrap_or_default();
                 push_event(
                     events,
-                    AgentKind::Crush,
+                    AgentKind::Other,
                     session,
                     message_id,
                     index,
@@ -3300,7 +3291,7 @@ fn parse_opencode(
             if let Some(text) = first_string(part, &["text", "content"]) {
                 push_event(
                     events,
-                    AgentKind::OpenCode,
+                    AgentKind::Other,
                     session,
                     id,
                     0,
@@ -3318,7 +3309,7 @@ fn parse_opencode(
             let input = state.get("input").map(compact_json).unwrap_or_default();
             push_event(
                 events,
-                AgentKind::OpenCode,
+                AgentKind::Other,
                 session,
                 id,
                 0,
@@ -3335,7 +3326,7 @@ fn parse_opencode(
             {
                 push_event(
                     events,
-                    AgentKind::OpenCode,
+                    AgentKind::Other,
                     session,
                     id,
                     1,
@@ -3351,7 +3342,7 @@ fn parse_opencode(
             let body = first_string(part, &["summary", "text", "content"]).unwrap_or("");
             push_event(
                 events,
-                AgentKind::OpenCode,
+                AgentKind::Other,
                 session,
                 id,
                 0,
@@ -4168,7 +4159,7 @@ fn export_antigravity(
     for prompt in prompts {
         push_event(
             &mut events,
-            AgentKind::AntigravityCli,
+            AgentKind::Other,
             session,
             &format!("{}-{}", prompt.millis, prompt.hash),
             0,
@@ -4942,7 +4933,7 @@ fn parse_opencode2(
             if let Some(text) = data.get("text").and_then(Value::as_str) {
                 push_event(
                     events,
-                    AgentKind::OpenCode,
+                    AgentKind::Other,
                     session,
                     id,
                     0,
@@ -4971,7 +4962,7 @@ fn parse_opencode2(
                         if let Some(text) = part.get("text").and_then(Value::as_str) {
                             push_event(
                                 events,
-                                AgentKind::OpenCode,
+                                AgentKind::Other,
                                 session,
                                 id,
                                 block,
@@ -4989,7 +4980,7 @@ fn parse_opencode2(
                         let input = state.get("input").map(compact_json).unwrap_or_default();
                         push_event(
                             events,
-                            AgentKind::OpenCode,
+                            AgentKind::Other,
                             session,
                             id,
                             block,
@@ -5018,7 +5009,7 @@ fn parse_opencode2(
                             if !output.trim().is_empty() {
                                 push_event(
                                     events,
-                                    AgentKind::OpenCode,
+                                    AgentKind::Other,
                                     session,
                                     id,
                                     block + 1,
@@ -5888,7 +5879,7 @@ mod tests {
     fn exported_transcript_caps_count_and_serialized_bytes() {
         let event = NewWorkstreamEvent {
             event_id: "event".into(),
-            agent: AgentKind::ClaudeCode,
+            agent: AgentKind::Other,
             native_session_id: "session".into(),
             source_record_id: None,
             kind: WorkstreamEventKind::Message,
@@ -7017,7 +7008,7 @@ mod tests {
         let mut second = Vec::new();
         push_event(
             &mut first,
-            AgentKind::Codex,
+            AgentKind::Other,
             "s",
             "r",
             0,
@@ -7029,7 +7020,7 @@ mod tests {
         );
         push_event(
             &mut second,
-            AgentKind::Codex,
+            AgentKind::Other,
             "s",
             "r",
             0,
@@ -7109,7 +7100,7 @@ mod tests {
             &mut losses,
         );
         parse_pi_family(
-            AgentKind::Pi,
+            AgentKind::Other,
             &pi,
             "session",
             "pi",
@@ -7136,7 +7127,7 @@ mod tests {
         let mut events = Vec::new();
         let mut losses = Vec::new();
         parse_pi_family(
-            AgentKind::Omp,
+            AgentKind::Other,
             &value,
             "session",
             "record",
@@ -8204,7 +8195,7 @@ mod tests {
             ]
         );
         assert!(export.events.iter().all(|event| {
-            event.agent == AgentKind::CopilotCli
+            event.agent == AgentKind::Other
                 && !event.content.contains("private")
                 && !event.content.contains("startup packet")
                 && !event.content.contains("current_datetime")
@@ -8398,7 +8389,7 @@ mod tests {
     fn transcript_interval_identity_is_ordered_and_semantic() {
         let event = |id: &str, role: &str, timestamp: &str, content: &str| NewWorkstreamEvent {
             event_id: id.into(),
-            agent: AgentKind::ClaudeCode,
+            agent: AgentKind::Other,
             native_session_id: "session".into(),
             source_record_id: None,
             kind: WorkstreamEventKind::Message,
@@ -8502,7 +8493,7 @@ mod tests {
             .iter()
             .map(|event| {
                 assert_eq!(event.role.as_deref(), Some("user"));
-                assert_eq!(event.agent, AgentKind::AntigravityCli);
+                assert_eq!(event.agent, AgentKind::Other);
                 event.content.as_str()
             })
             .collect()

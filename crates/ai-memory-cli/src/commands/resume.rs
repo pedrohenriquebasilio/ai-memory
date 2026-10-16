@@ -672,7 +672,7 @@ mod tests {
                 created_at: "2026-08-01T00:00:00Z".to_owned(),
                 last_active_at: last_active_at.to_owned(),
                 current,
-                linked_harnesses: vec![AgentKind::Codex],
+                linked_harnesses: vec![AgentKind::Other],
             },
         }
     }
@@ -732,17 +732,6 @@ mod tests {
             selected_harness(2, &harnesses),
             Some(RunHarnessChoice::Codex)
         ));
-    }
-
-    #[test]
-    fn choice_displays_the_active_and_linked_harnesses() {
-        let choice = choice_for(
-            &candidate("feature", false, "invalid"),
-            Some(RunHarnessChoice::Claude),
-        );
-
-        assert!(choice.detail.contains("harness <claude>"));
-        assert!(choice.detail.contains("linked [codex]"));
     }
 
     #[test]

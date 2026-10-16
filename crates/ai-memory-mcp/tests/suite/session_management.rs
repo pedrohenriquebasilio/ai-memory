@@ -143,7 +143,7 @@ async fn session(h: &Harness, owner: Option<&str>) -> SessionId {
             id,
             workspace_id: h.ws,
             project_id: h.project,
-            agent_kind: AgentKind::Codex,
+            agent_kind: AgentKind::Other,
             cwd: None,
             actor_user: owner.map(|name| format!("user:{name}")),
         })

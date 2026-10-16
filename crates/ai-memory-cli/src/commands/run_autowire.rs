@@ -801,16 +801,6 @@ mod tests {
     }
 
     #[test]
-    fn kimi_maps_to_the_kimi_agent_and_client() {
-        let agent = agent_choice_for_harness(ManagedHarness::Kimi).unwrap();
-        assert_eq!(agent.kind().as_str(), "kimi-code");
-        assert!(
-            install_hooks::mcp_client_for_agent(agent).is_some(),
-            "Kimi has an MCP client the installer can write"
-        );
-    }
-
-    #[test]
     fn pi_wires_hooks_but_has_no_mcp_client() {
         let agent = agent_choice_for_harness(ManagedHarness::Pi).unwrap();
         assert!(
@@ -920,34 +910,6 @@ mod tests {
         assert!(!plugin.exists());
         assert_eq!(std::fs::read_to_string(mcp).unwrap(), initial);
         assert!(crate::config::read_hook_auth_token(&config.data_dir).is_none());
-    }
-
-    #[test]
-    fn sentinel_keys_on_agent_version_and_install_targets() {
-        let dir = Path::new("/data");
-        let targets = |hooks: &str| vec![hooks.to_string(), "/cfg/.claude.json".to_string()];
-        let claude = sentinel_path(dir, AgentChoice::ClaudeCode, &targets("/a/settings.json"));
-        let codex = sentinel_path(dir, AgentChoice::Codex, &targets("/a/settings.json"));
-        assert_ne!(claude, codex, "different agents get distinct sentinels");
-        assert_eq!(
-            claude,
-            sentinel_path(dir, AgentChoice::ClaudeCode, &targets("/a/settings.json")),
-            "the same install targets reuse the sentinel"
-        );
-        assert_ne!(
-            claude,
-            sentinel_path(dir, AgentChoice::ClaudeCode, &targets("/b/settings.json")),
-            "another config home gets its own first launch"
-        );
-        assert!(claude.starts_with("/data/autowire-state/"));
-        let prefix = format!("claude-code-{}-", env!("CARGO_PKG_VERSION"));
-        assert!(
-            claude
-                .file_name()
-                .and_then(|n| n.to_str())
-                .is_some_and(|n| n.starts_with(&prefix)),
-            "sentinel names the agent and version first: {claude:?}"
-        );
     }
 
     /// `--env CLAUDE_CONFIG_DIR=.claude-work` names a different home in each

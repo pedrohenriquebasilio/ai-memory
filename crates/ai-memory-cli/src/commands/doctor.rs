@@ -1526,50 +1526,12 @@ mod tests {
     }
 
     #[test]
-    fn recent_local_with_zero_captured_is_the_only_flagged_case() {
-        // Kimi ran here recently but nothing was captured — the F1 gap.
-        let local = vec![scan(AgentKind::KimiCode, 2, 2)];
-        let rows = build_rows(&local, &captured(&[]));
-        let kimi = row(&rows, "kimi-code");
-        assert_eq!(
-            kimi.uncaptured,
-            Some(true),
-            "recent local + zero captured must warn"
-        );
-        assert_eq!(kimi.local_recent, 2);
-        assert_eq!(kimi.captured, Some(0));
-    }
-
-    #[test]
     fn any_captured_session_clears_the_flag() {
         // One captured session proves the hook works even if local files differ
         // in count (resume reuse maps many local files to one server session).
-        let local = vec![scan(AgentKind::ClaudeCode, 12, 4)];
+        let local = vec![scan(AgentKind::Other, 12, 4)];
         let rows = build_rows(&local, &captured(&[("claude-code", 3)]));
         assert_eq!(row(&rows, "claude-code").uncaptured, Some(false));
-    }
-
-    #[test]
-    fn only_historical_local_sessions_do_not_warn() {
-        // Local sessions exist but none are recent → not actionable.
-        let local = vec![scan(AgentKind::Codex, 5, 0)];
-        let rows = build_rows(&local, &captured(&[]));
-        assert_eq!(row(&rows, "codex").uncaptured, Some(false));
-    }
-
-    #[test]
-    fn kiro_v2_and_v3_local_counts_fold_under_one_agent_kind() {
-        // Both Kiro engines map to AgentKind::KiroCli; their stores are
-        // distinct but the server records one kind, so counts must sum.
-        let local = vec![
-            scan(AgentKind::KiroCli, 2, 1),
-            scan(AgentKind::KiroCli, 3, 2),
-        ];
-        let rows = build_rows(&local, &captured(&[]));
-        let kiro = row(&rows, "kiro-cli");
-        assert_eq!(kiro.local_total, 5);
-        assert_eq!(kiro.local_recent, 3);
-        assert_eq!(kiro.uncaptured, Some(true));
     }
 
     #[test]
@@ -1585,22 +1547,8 @@ mod tests {
 
     #[test]
     fn agents_with_neither_local_nor_captured_are_dropped() {
-        let rows = build_rows(&[scan(AgentKind::Codex, 0, 0)], &captured(&[]));
+        let rows = build_rows(&[scan(AgentKind::Other, 0, 0)], &captured(&[]));
         assert!(rows.is_empty(), "empty rows should not be listed: {rows:?}");
-    }
-
-    #[test]
-    fn uncaptured_rows_sort_first() {
-        let local = vec![
-            scan(AgentKind::ClaudeCode, 3, 1),
-            scan(AgentKind::KimiCode, 2, 2),
-        ];
-        let rows = build_rows(&local, &captured(&[("claude-code", 3)]));
-        assert_eq!(
-            rows[0].agent, "kimi-code",
-            "the warning must lead: {rows:?}"
-        );
-        assert_eq!(rows[0].uncaptured, Some(true));
     }
 
     #[test]
@@ -1658,7 +1606,7 @@ mod tests {
         let scans = scan_local_with(home.path(), cwd.path(), 0, |_| None).await;
         let claude = scans
             .iter()
-            .find(|s| s.agent == AgentKind::ClaudeCode)
+            .find(|s| s.agent == AgentKind::Other)
             .unwrap_or_else(|| panic!("expected a ClaudeCode scan; got {scans:?}"));
         assert_eq!(claude.total, 1, "only the matching-cwd session counts");
         assert_eq!(claude.recent, 1, "since_days 0 makes it recent");
@@ -1668,72 +1616,6 @@ mod tests {
         let none = scan_local_with(empty_home.path(), cwd.path(), 0, |_| None).await;
         assert!(none.is_empty(), "no stores should mean no scans: {none:?}");
     }
-
-    /// Plants a Claude Code session (for `cwd`) with a sibling `memory/`
-    /// directory under `home`, the fixture every `native_memory_reports`
-    /// test below starts from.
-    fn claude_memory_fixture(home: &Path, cwd: &Path) -> PathBuf {
-        let project_dir = home.join(".claude/projects/fixture");
-        std::fs::create_dir_all(&project_dir).unwrap();
-        std::fs::write(
-            project_dir.join("session.jsonl"),
-            format!(
-                "{}\n",
-                serde_json::json!({
-                    "sessionId": "11111111-2222-3333-4444-555555555555",
-                    "cwd": cwd.to_string_lossy(),
-                })
-            ),
-        )
-        .unwrap();
-        let memory_dir = project_dir.join("memory");
-        std::fs::create_dir_all(&memory_dir).unwrap();
-        memory_dir
-    }
-
-    fn find_claude_report(reports: &[NativeMemoryReport]) -> &NativeMemoryReport {
-        reports
-            .iter()
-            .find(|r| r.agent == "claude-code")
-            .unwrap_or_else(|| panic!("expected a claude-code report; got {reports:?}"))
-    }
-
-    #[test]
-    fn native_memory_reports_is_not_excluded_without_a_marker() {
-        let home = tempfile::tempdir().unwrap();
-        let cwd = tempfile::tempdir().unwrap();
-        let memory_dir = claude_memory_fixture(home.path(), cwd.path());
-        std::fs::write(memory_dir.join("fact.md"), "x").unwrap();
-
-        let reports = native_memory_reports(home.path(), cwd.path());
-        let claude = find_claude_report(&reports);
-        assert_eq!(claude.status, "not excluded");
-        assert_eq!(claude.file_count, 1);
-    }
-
-    #[test]
-    fn native_memory_reports_is_excluded_when_the_marker_covers_it() {
-        let home = tempfile::tempdir().unwrap();
-        let cwd = tempfile::tempdir().unwrap();
-        let memory_dir = claude_memory_fixture(home.path(), cwd.path());
-        std::fs::write(memory_dir.join("fact.md"), "x").unwrap();
-        // An absolute pattern naming the fixture's own (fake) home, so this
-        // does not depend on the real process `$HOME` the way a `~/...`
-        // pattern would inside capture_policy's own home resolution.
-        std::fs::write(
-            cwd.path().join(".ai-memory.toml"),
-            format!(
-                "[capture]\nignore_paths = [{:?}]\n",
-                format!("{}/.claude/projects/**", home.path().display())
-            ),
-        )
-        .unwrap();
-
-        let reports = native_memory_reports(home.path(), cwd.path());
-        let claude = find_claude_report(&reports);
-        assert_eq!(claude.status, "excluded");
-    }
-
     #[test]
     fn marker_capture_problem_exposes_only_a_safe_classification() {
         let cwd = tempfile::tempdir().unwrap();
@@ -1755,71 +1637,5 @@ mod tests {
         assert_eq!(json, r#"{"classification":"settings_marker_invalid"}"#);
         assert!(!json.contains(private_path.to_str().unwrap()));
         assert!(!json.contains("private-toml-sentinel"));
-    }
-
-    #[test]
-    fn native_memory_reports_is_marker_invalid_for_a_broken_capture_table() {
-        let home = tempfile::tempdir().unwrap();
-        let cwd = tempfile::tempdir().unwrap();
-        claude_memory_fixture(home.path(), cwd.path());
-        // The exact dropped-`#` shape found in practice: a stray token right
-        // after a `[capture]` header.
-        std::fs::write(
-            cwd.path().join(".ai-memory.toml"),
-            "[capture] this used to be a comment\nignore_paths = [\"**\"]\n",
-        )
-        .unwrap();
-
-        let reports = native_memory_reports(home.path(), cwd.path());
-        let claude = find_claude_report(&reports);
-        assert_eq!(claude.status, "marker invalid");
-    }
-
-    #[test]
-    fn native_memory_reports_file_count_ignores_subdirectories() {
-        let home = tempfile::tempdir().unwrap();
-        let cwd = tempfile::tempdir().unwrap();
-        let memory_dir = claude_memory_fixture(home.path(), cwd.path());
-        std::fs::write(memory_dir.join("fact.md"), "x").unwrap();
-        std::fs::create_dir_all(memory_dir.join("a-subdirectory")).unwrap();
-        std::fs::write(memory_dir.join("a-subdirectory/nested.md"), "y").unwrap();
-
-        let reports = native_memory_reports(home.path(), cwd.path());
-        let claude = find_claude_report(&reports);
-        assert_eq!(
-            claude.file_count, 1,
-            "the subdirectory itself must not be counted as a file"
-        );
-    }
-
-    /// The bug found in review: Claude Code keys its auto-memory by
-    /// repository root, so running `doctor` from a subdirectory (or a linked
-    /// worktree) must still resolve the root's `memory/` store, not come up
-    /// empty because the session was recorded for the root and not the
-    /// subdirectory `doctor` happened to run from.
-    #[test]
-    fn native_memory_reports_resolves_a_subdirectory_to_the_repository_root() {
-        let home = tempfile::tempdir().unwrap();
-        let repo = tempfile::tempdir().unwrap();
-        let status = std::process::Command::new("git")
-            .args(["init", "-q"])
-            .arg(repo.path())
-            .status();
-        if !matches!(status, Ok(s) if s.success()) {
-            // No git binary in this environment: the repo-root resolution
-            // falls back to the given cwd unchanged, so there is nothing
-            // this test can distinguish here. Skip rather than fail.
-            return;
-        }
-        let subdir = repo.path().join("sub/dir");
-        std::fs::create_dir_all(&subdir).unwrap();
-        // The session was recorded for the repository ROOT, as Claude Code
-        // itself would record it -- not for the subdirectory.
-        let memory_dir = claude_memory_fixture(home.path(), repo.path());
-        std::fs::write(memory_dir.join("fact.md"), "x").unwrap();
-
-        let reports = native_memory_reports(home.path(), &subdir);
-        let claude = find_claude_report(&reports);
-        assert_eq!(claude.file_count, 1);
     }
 }

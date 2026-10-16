@@ -82,8 +82,8 @@ fn seed(db_path: &std::path::Path) {
         .unwrap();
     }
     let sessions = [
-        (10, &a, "claude-code", "/w/a", NOW, Some(NOW + 100), None),
-        (11, &a, "codex", "/w/a", NOW + 10, None, None),
+        (10, &a, "other", "/w/a", NOW, Some(NOW + 100), None),
+        (11, &a, "other", "/w/a", NOW + 10, None, None),
         (
             12,
             &b,
@@ -96,7 +96,7 @@ fn seed(db_path: &std::path::Path) {
         (
             13,
             &a,
-            "claude-code",
+            "other",
             "/w/a",
             NOW + 30,
             Some(NOW + 40),
@@ -429,7 +429,7 @@ async fn sessions_for_scope_lists_touched_sessions_newest_first() {
          counts are per scope",
     );
     let crossed = &all[3];
-    assert_eq!(crossed.agent_kind, "claude-code");
+    assert_eq!(crossed.agent_kind, "other");
     assert_eq!(crossed.cwd.as_deref(), Some("/w/a"));
     assert!(crossed.ended_at.is_some());
     assert_eq!(crossed.actor_user, None);
@@ -511,7 +511,7 @@ async fn session_summary_scoped_narrows_the_listing_predicates() {
         .unwrap()
         .expect("session 10 is anchored in proj-a");
     assert_eq!(anchored.observation_count, 3);
-    assert_eq!(anchored.agent_kind, "claude-code");
+    assert_eq!(anchored.agent_kind, "other");
 
     let touched = store
         .reader
@@ -735,7 +735,7 @@ async fn mixed_capture_count_scopes_observations_and_preserves_owner_and_window(
     assert_eq!(
         counts
             .iter()
-            .find(|c| c.agent == "claude-code")
+            .find(|c| c.agent == "other")
             .unwrap()
             .mixed_capture_sessions,
         1

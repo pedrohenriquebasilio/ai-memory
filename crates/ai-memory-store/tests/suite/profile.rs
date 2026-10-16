@@ -371,7 +371,7 @@ async fn digest_inputs_read_entries_stack_and_newness() {
             id: session,
             workspace_id: ws,
             project_id: app,
-            agent_kind: AgentKind::ClaudeCode,
+            agent_kind: AgentKind::Other,
             cwd: Some("/repo/app".into()),
             actor_user: None,
         })

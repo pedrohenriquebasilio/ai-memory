@@ -40,7 +40,7 @@ fn seed(db_path: &std::path::Path) {
     // The session row froze on proj-b at session start (pre-marker scope).
     conn.execute(
         "INSERT INTO sessions (id, workspace_id, project_id, agent_kind, cwd, started_at) \
-         VALUES (?1, ?2, ?3, 'claude-code', ?4, ?5)",
+         VALUES (?1, ?2, ?3, 'cursor', ?4, ?5)",
         params![&session[..], &ws[..], &b[..], "/w/b", now],
     )
     .unwrap();

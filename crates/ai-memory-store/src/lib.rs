@@ -889,7 +889,7 @@ mod tests {
                 id: out_of_scope_session,
                 workspace_id: ws,
                 project_id: other,
-                agent_kind: AgentKind::Codex,
+                agent_kind: AgentKind::Other,
                 cwd: None,
                 actor_user: None,
             })
@@ -1790,7 +1790,7 @@ mod tests {
                 id: claimed_session,
                 workspace_id: src_ws,
                 project_id: proj,
-                agent_kind: AgentKind::OpenCode,
+                agent_kind: AgentKind::Other,
                 cwd: None,
                 actor_user: None,
             })
@@ -2162,9 +2162,12 @@ mod tests {
             params![proj.as_bytes(), ws.as_bytes()],
         )
         .unwrap();
+        // Seed a session with a legacy agent_kind that was valid at V8. The
+        // V84 Cursor-only migration must collapse this to 'other' without
+        // dropping the attached observation.
         conn.execute(
             "INSERT INTO sessions (id, workspace_id, project_id, agent_kind, started_at) \
-             VALUES (?1, ?2, ?3, 'open-code', 1)",
+             VALUES (?1, ?2, ?3, 'claude-code', 1)",
             params![sid.as_bytes(), ws.as_bytes(), proj.as_bytes()],
         )
         .unwrap();
@@ -2178,7 +2181,20 @@ mod tests {
 
         let store = Store::open(tmp.path()).unwrap();
         let count = store.reader.status_counts().await.unwrap().observations;
-        assert_eq!(count, 1, "V09 must not cascade-delete observations");
+        assert_eq!(count, 1, "migrations must not cascade-delete observations");
+
+        // V84 Cursor-only collapse: the legacy 'claude-code' kind must have
+        // been normalised to 'other' without losing its session row.
+        let conn = Connection::open(&db_path).unwrap();
+        let kind: String = conn
+            .query_row(
+                "SELECT agent_kind FROM sessions WHERE id = ?1",
+                params![sid.as_bytes()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(kind, "other", "V84 must collapse legacy kinds to 'other'");
+        drop(conn);
 
         store
             .writer
@@ -2187,7 +2203,7 @@ mod tests {
                 id: SessionId::new(),
                 workspace_id: ws,
                 project_id: proj,
-                agent_kind: AgentKind::AntigravityCli,
+                agent_kind: AgentKind::Other,
                 cwd: None,
                 actor_user: None,
             })
@@ -2214,7 +2230,7 @@ mod tests {
         let sid = SessionId::new();
         conn.execute(
             "INSERT INTO sessions (id, workspace_id, project_id, agent_kind, started_at) \
-             VALUES (?1, ?2, ?3, 'codex', 1)",
+             VALUES (?1, ?2, ?3, 'cursor', 1)",
             params![sid.as_bytes(), ws.as_bytes(), proj.as_bytes()],
         )
         .unwrap();
@@ -2231,7 +2247,7 @@ mod tests {
         .unwrap();
         conn.execute(
             "INSERT INTO ingest_keys (project_id, key, seen_at, session_id, agent_kind) \
-             VALUES (?1, 'k1', 1, ?2, 'codex')",
+             VALUES (?1, 'k1', 1, ?2, 'cursor')",
             params![proj.as_bytes(), sid.as_bytes()],
         )
         .unwrap();
@@ -2800,12 +2816,12 @@ mod tests {
         };
         let first = store
             .writer
-            .insert_handoff(new_handoff(AgentKind::ClaudeCode))
+            .insert_handoff(new_handoff(AgentKind::Other))
             .await
             .unwrap();
         let second = store
             .writer
-            .insert_handoff(new_handoff(AgentKind::Codex))
+            .insert_handoff(new_handoff(AgentKind::Other))
             .await
             .unwrap();
 
@@ -2822,8 +2838,8 @@ mod tests {
             open.iter().map(|h| &h.id).collect::<Vec<_>>()
         );
         assert_eq!(open[1].id, second.to_string());
-        assert_eq!(open[0].from_agent, "claude-code");
-        assert_eq!(open[1].from_agent, "codex");
+        assert_eq!(open[0].from_agent, "other");
+        assert_eq!(open[1].from_agent, "other");
 
         // The listing must answer "what is still pending", so an accepted
         // handoff has to drop out — otherwise it re-proposes work already
@@ -2834,7 +2850,7 @@ mod tests {
                 handoff_id: first,
                 workspace_id: ws,
                 project_id: proj,
-                accepting_agent: AgentKind::Codex,
+                accepting_agent: AgentKind::Other,
                 accepting_session: None,
                 accepting_user: None,
                 owner_filter: ai_memory_core::OwnerFilter::Any,
@@ -3372,7 +3388,7 @@ mod tests {
                 id: session_id,
                 workspace_id: ws,
                 project_id: proj,
-                agent_kind: AgentKind::OpenCode,
+                agent_kind: AgentKind::Other,
                 cwd: None,
                 actor_user: None,
             })
@@ -3434,7 +3450,7 @@ mod tests {
                 id: session_id,
                 workspace_id: ws,
                 project_id: proj,
-                agent_kind: AgentKind::ClaudeCode,
+                agent_kind: AgentKind::Other,
                 cwd: None,
                 actor_user: None,
             })
@@ -3515,7 +3531,7 @@ mod tests {
                     id: session_id,
                     workspace_id: ws,
                     project_id,
-                    agent_kind: AgentKind::ClaudeCode,
+                    agent_kind: AgentKind::Other,
                     cwd: None,
                     actor_user: None,
                 })
@@ -3699,7 +3715,7 @@ mod tests {
                     id,
                     workspace_id: ws,
                     project_id: proj,
-                    agent_kind: AgentKind::OpenCode,
+                    agent_kind: AgentKind::Other,
                     cwd: None,
                     actor_user: None,
                 })
@@ -3745,7 +3761,7 @@ mod tests {
                 id: session_id,
                 workspace_id: ws,
                 project_id: proj,
-                agent_kind: AgentKind::Codex,
+                agent_kind: AgentKind::Other,
                 cwd: None,
                 actor_user: Some("user:alice".into()),
             })
@@ -3755,7 +3771,7 @@ mod tests {
             workspace_id: ws,
             project_id,
             from_session_id: Some(session_id),
-            from_agent: AgentKind::Codex,
+            from_agent: AgentKind::Other,
             to_agent: None,
             cwd: None,
             summary: "continue".into(),
@@ -3776,7 +3792,7 @@ mod tests {
         assert_eq!(
             store
                 .reader
-                .session_end_disposition(session_id, ws, proj, AgentKind::Codex)
+                .session_end_disposition(session_id, ws, proj, AgentKind::Other)
                 .await
                 .unwrap(),
             SessionEndDisposition::Open,
@@ -3794,7 +3810,7 @@ mod tests {
         assert_eq!(
             store
                 .reader
-                .session_end_disposition(session_id, ws, proj, AgentKind::Codex)
+                .session_end_disposition(session_id, ws, proj, AgentKind::Other)
                 .await
                 .unwrap(),
             SessionEndDisposition::Open,
@@ -3843,7 +3859,7 @@ mod tests {
         assert_eq!(
             store
                 .reader
-                .session_end_disposition(session_id, ws, proj, AgentKind::ClaudeCode)
+                .session_end_disposition(session_id, ws, proj, AgentKind::Other)
                 .await
                 .unwrap(),
             SessionEndDisposition::DropInvalid,
@@ -3856,7 +3872,7 @@ mod tests {
                 id: session_id,
                 workspace_id: ws,
                 project_id: proj,
-                agent_kind: AgentKind::ClaudeCode,
+                agent_kind: AgentKind::Other,
                 cwd: None,
                 actor_user: None,
             })
@@ -3870,7 +3886,7 @@ mod tests {
         assert_eq!(
             store
                 .reader
-                .session_end_disposition(session_id, ws, other_proj, AgentKind::ClaudeCode)
+                .session_end_disposition(session_id, ws, other_proj, AgentKind::Other)
                 .await
                 .unwrap(),
             SessionEndDisposition::DropInvalid
@@ -3878,7 +3894,7 @@ mod tests {
         assert_eq!(
             store
                 .reader
-                .session_end_disposition(session_id, ws, proj, AgentKind::Codex)
+                .session_end_disposition(session_id, ws, proj, AgentKind::Cursor)
                 .await
                 .unwrap(),
             SessionEndDisposition::DropInvalid
@@ -3920,7 +3936,7 @@ mod tests {
         assert_eq!(
             store
                 .reader
-                .session_end_disposition(session_id, ws, proj, AgentKind::ClaudeCode)
+                .session_end_disposition(session_id, ws, proj, AgentKind::Other)
                 .await
                 .unwrap(),
             SessionEndDisposition::AlreadyEnded,
@@ -3954,7 +3970,7 @@ mod tests {
         assert_eq!(
             store
                 .reader
-                .session_end_disposition(session_id, ws, proj, AgentKind::ClaudeCode)
+                .session_end_disposition(session_id, ws, proj, AgentKind::Other)
                 .await
                 .unwrap(),
             SessionEndDisposition::ReEndWithNewWork,
@@ -3965,7 +3981,7 @@ mod tests {
         assert_eq!(
             store
                 .reader
-                .session_end_disposition(session_id, ws, proj, AgentKind::ClaudeCode)
+                .session_end_disposition(session_id, ws, proj, AgentKind::Other)
                 .await
                 .unwrap(),
             SessionEndDisposition::AlreadyEnded,
@@ -3997,7 +4013,7 @@ mod tests {
                 id: historical,
                 workspace_id: ws,
                 project_id: proj,
-                agent_kind: AgentKind::OpenCode,
+                agent_kind: AgentKind::Other,
                 cwd: None,
                 actor_user: None,
             })
@@ -4029,7 +4045,7 @@ mod tests {
                     id,
                     workspace_id: ws,
                     project_id: proj,
-                    agent_kind: AgentKind::OpenCode,
+                    agent_kind: AgentKind::Other,
                     cwd: None,
                     actor_user: None,
                 })
@@ -4105,7 +4121,7 @@ mod tests {
                 id: reviewed_after_watermark,
                 workspace_id: ws,
                 project_id: proj,
-                agent_kind: AgentKind::OpenCode,
+                agent_kind: AgentKind::Other,
                 cwd: None,
                 actor_user: None,
             })
@@ -4181,7 +4197,7 @@ mod tests {
                     id: historical,
                     workspace_id: ws,
                     project_id,
-                    agent_kind: AgentKind::OpenCode,
+                    agent_kind: AgentKind::Other,
                     cwd: None,
                     actor_user: None,
                 })
@@ -4209,7 +4225,7 @@ mod tests {
                     id: session_id,
                     workspace_id: ws,
                     project_id,
-                    agent_kind: AgentKind::OpenCode,
+                    agent_kind: AgentKind::Other,
                     cwd: None,
                     actor_user: None,
                 })
@@ -4253,7 +4269,7 @@ mod tests {
                 id: first_session,
                 workspace_id: ws,
                 project_id: proj,
-                agent_kind: AgentKind::OpenCode,
+                agent_kind: AgentKind::Other,
                 cwd: None,
                 actor_user: None,
             })
@@ -4301,7 +4317,7 @@ mod tests {
                     id,
                     workspace_id: ws,
                     project_id: proj,
-                    agent_kind: AgentKind::OpenCode,
+                    agent_kind: AgentKind::Other,
                     cwd: None,
                     actor_user: None,
                 })
@@ -4381,7 +4397,7 @@ mod tests {
                 id: session,
                 workspace_id: ws,
                 project_id: proj,
-                agent_kind: AgentKind::OpenCode,
+                agent_kind: AgentKind::Other,
                 cwd: None,
                 actor_user: None,
             })
@@ -4520,7 +4536,7 @@ mod tests {
                 id: session_id,
                 workspace_id: ws,
                 project_id: proj,
-                agent_kind: AgentKind::OpenCode,
+                agent_kind: AgentKind::Other,
                 cwd: None,
                 actor_user: None,
             })
@@ -4587,7 +4603,7 @@ mod tests {
             conn.execute(
                 "INSERT INTO sessions \
                  (id, workspace_id, project_id, agent_kind, cwd, started_at) \
-                 VALUES (?1, ?2, ?3, 'open-code', NULL, ?4)",
+                 VALUES (?1, ?2, ?3, 'cursor', NULL, ?4)",
                 params![
                     session_id.as_bytes(),
                     ws.as_bytes(),
@@ -5276,7 +5292,7 @@ mod tests {
             repo_fingerprint: "repo".into(),
             worktree_fingerprint: "worktree".into(),
             cwd: "/repo".into(),
-            agent: AgentKind::Codex,
+            agent: AgentKind::Other,
             automatic_harness: false,
             available_agents: Vec::new(),
             selection: WorkstreamSelection::Current,
@@ -5301,7 +5317,7 @@ mod tests {
         assert!(
             store
                 .writer
-                .link_managed_run_session(first.run_id, AgentKind::Codex, "native-1")
+                .link_managed_run_session(first.run_id, AgentKind::Other, "native-1")
                 .await
                 .unwrap()
         );
@@ -5346,7 +5362,7 @@ mod tests {
         assert!(
             !store
                 .writer
-                .link_managed_run_session(second.run_id, AgentKind::Codex, "native-2")
+                .link_managed_run_session(second.run_id, AgentKind::Other, "native-2")
                 .await
                 .unwrap()
         );
@@ -5357,7 +5373,7 @@ mod tests {
         assert!(
             store
                 .writer
-                .link_managed_run_session(second.run_id, AgentKind::Codex, "native-1")
+                .link_managed_run_session(second.run_id, AgentKind::Other, "native-1")
                 .await
                 .unwrap()
         );
@@ -5408,7 +5424,7 @@ mod tests {
         assert!(
             store
                 .writer
-                .link_managed_run_session(second.run_id, AgentKind::Codex, "native-3")
+                .link_managed_run_session(second.run_id, AgentKind::Other, "native-3")
                 .await
                 .unwrap()
         );
@@ -5453,7 +5469,7 @@ mod tests {
             repo_fingerprint: "repo".into(),
             worktree_fingerprint: "worktree".into(),
             cwd: "/repo".into(),
-            agent: AgentKind::Codex,
+            agent: AgentKind::Other,
             automatic_harness: false,
             available_agents: Vec::new(),
             selection: WorkstreamSelection::Current,
@@ -5474,14 +5490,14 @@ mod tests {
         assert!(
             store
                 .writer
-                .link_managed_run_session(run.run_id, AgentKind::Codex, "native-1")
+                .link_managed_run_session(run.run_id, AgentKind::Other, "native-1")
                 .await
                 .unwrap()
         );
 
         let event = NewWorkstreamEvent {
             event_id: "event-1".into(),
-            agent: AgentKind::Codex,
+            agent: AgentKind::Other,
             native_session_id: "native-1".into(),
             source_record_id: Some("record-1".into()),
             kind: WorkstreamEventKind::Message,
@@ -5596,7 +5612,7 @@ mod tests {
         assert!(
             store
                 .writer
-                .link_managed_run_session(next.run_id, AgentKind::Codex, "native-2")
+                .link_managed_run_session(next.run_id, AgentKind::Other, "native-2")
                 .await
                 .unwrap()
         );
@@ -5618,7 +5634,7 @@ mod tests {
         assert!(
             !store
                 .writer
-                .link_managed_run_session(next.run_id, AgentKind::Codex, "native-3")
+                .link_managed_run_session(next.run_id, AgentKind::Other, "native-3")
                 .await
                 .unwrap(),
             "a delivered run must not be rebound by a nested same-agent process"
@@ -5660,7 +5676,7 @@ mod tests {
         assert!(
             store
                 .writer
-                .link_managed_run_session(retry.run_id, AgentKind::Codex, "native-3")
+                .link_managed_run_session(retry.run_id, AgentKind::Other, "native-3")
                 .await
                 .unwrap()
         );
@@ -5716,7 +5732,7 @@ mod tests {
             repo_fingerprint: "repo".into(),
             worktree_fingerprint: "worktree".into(),
             cwd: "/repo".into(),
-            agent: AgentKind::Codex,
+            agent: AgentKind::Other,
             automatic_harness: false,
             available_agents: Vec::new(),
             selection: WorkstreamSelection::Current,
@@ -5781,7 +5797,7 @@ mod tests {
 
         let blank = store
             .writer
-            .prepare_workstream_run(prepare(AgentKind::Codex, "blank"))
+            .prepare_workstream_run(prepare(AgentKind::Other, "blank"))
             .await
             .unwrap();
         assert!(blank.may_adopt_existing_session);
@@ -5811,7 +5827,7 @@ mod tests {
 
         let first = store
             .writer
-            .prepare_workstream_run(prepare(AgentKind::ClaudeCode, "claude"))
+            .prepare_workstream_run(prepare(AgentKind::Other, "claude"))
             .await
             .unwrap();
         assert!(
@@ -5821,7 +5837,7 @@ mod tests {
         assert!(
             store
                 .writer
-                .link_managed_run_session(first.run_id, AgentKind::ClaudeCode, "claude-native")
+                .link_managed_run_session(first.run_id, AgentKind::Other, "claude-native")
                 .await
                 .unwrap()
         );
@@ -5849,27 +5865,29 @@ mod tests {
             .await
             .unwrap();
 
+        // Cross-harness: the second run is a different AgentKind (Cursor),
+        // so it must not inherit the previous Other harness' native session.
         let codex = store
             .writer
-            .prepare_workstream_run(prepare(AgentKind::Codex, "codex"))
+            .prepare_workstream_run(prepare(AgentKind::Cursor, "codex"))
             .await
             .unwrap();
         assert!(codex.native_session_id.is_none());
         assert_eq!(
             codex.previous_native_session,
             Some(ai_memory_core::ManagedNativeSessionReference {
-                agent: AgentKind::ClaudeCode,
+                agent: AgentKind::Other,
                 native_session_id: "claude-native".into(),
             })
         );
         assert!(
             !codex.may_adopt_existing_session,
-            "an established Claude workstream must start a fresh Codex session"
+            "an established workstream must start a fresh session for a different harness"
         );
         assert!(
             store
                 .writer
-                .link_managed_run_session(codex.run_id, AgentKind::Codex, "codex-native")
+                .link_managed_run_session(codex.run_id, AgentKind::Cursor, "codex-native")
                 .await
                 .unwrap()
         );
@@ -5882,7 +5900,7 @@ mod tests {
                 .unwrap()
                 .previous_native_session,
             Some(ai_memory_core::ManagedNativeSessionReference {
-                agent: AgentKind::ClaudeCode,
+                agent: AgentKind::Other,
                 native_session_id: "claude-native".into(),
             }),
             "linking the destination must not replace the pinned source"
@@ -5913,7 +5931,7 @@ mod tests {
 
         let same_harness = store
             .writer
-            .prepare_workstream_run(prepare(AgentKind::Codex, "codex-again"))
+            .prepare_workstream_run(prepare(AgentKind::Cursor, "codex-again"))
             .await
             .unwrap();
         assert!(same_harness.previous_native_session.is_none());
@@ -5947,7 +5965,7 @@ mod tests {
         };
         let claude = store
             .writer
-            .prepare_workstream_run(base(AgentKind::ClaudeCode, "claude"))
+            .prepare_workstream_run(base(AgentKind::Other, "claude"))
             .await
             .unwrap();
         store
@@ -5974,15 +5992,15 @@ mod tests {
             .await
             .unwrap();
 
-        let mut automatic = base(AgentKind::Codex, "automatic");
+        let mut automatic = base(AgentKind::Other, "automatic");
         automatic.automatic_harness = true;
-        automatic.available_agents = vec![AgentKind::Codex, AgentKind::ClaudeCode];
+        automatic.available_agents = vec![AgentKind::Other, AgentKind::Other];
         let resumed = store
             .writer
             .prepare_workstream_run(automatic)
             .await
             .unwrap();
-        assert_eq!(resumed.agent, AgentKind::ClaudeCode);
+        assert_eq!(resumed.agent, AgentKind::Other);
         assert_eq!(resumed.native_session_id.as_deref(), Some("claude-current"));
         assert_eq!(resumed.source_cursor.as_deref(), Some("cursor"));
         assert!(!resumed.may_adopt_existing_session);
@@ -6016,7 +6034,7 @@ mod tests {
                     repo_fingerprint: "same-repository".into(),
                     worktree_fingerprint: "same-worktree".into(),
                     cwd: "/same/path".into(),
-                    agent: AgentKind::Codex,
+                    agent: AgentKind::Other,
                     automatic_harness: false,
                     available_agents: Vec::new(),
                     selection: WorkstreamSelection::Current,
@@ -6041,7 +6059,7 @@ mod tests {
                         source_cursor: Some("cursor".into()),
                         events: vec![NewWorkstreamEvent {
                             event_id: "same-native-event-id".into(),
-                            agent: AgentKind::Codex,
+                            agent: AgentKind::Other,
                             native_session_id: format!("native-{workspace_name}"),
                             source_record_id: None,
                             kind: WorkstreamEventKind::Message,
@@ -6098,7 +6116,7 @@ mod tests {
             repo_fingerprint: "repo".into(),
             worktree_fingerprint: "worktree".into(),
             cwd: "/repo".into(),
-            agent: AgentKind::Codex,
+            agent: AgentKind::Other,
             automatic_harness: false,
             available_agents: Vec::new(),
             selection: WorkstreamSelection::Current,
@@ -6306,7 +6324,7 @@ mod tests {
         assert!(
             store
                 .writer
-                .link_managed_run_session(run.run_id, AgentKind::Codex, "native-1")
+                .link_managed_run_session(run.run_id, AgentKind::Other, "native-1")
                 .await
                 .unwrap()
         );
@@ -6317,8 +6335,8 @@ mod tests {
             native_session_id: Some("native-1".into()),
             source_cursor: Some("cursor-1".into()),
             events: vec![
-                managed_event("ev-1", AgentKind::Codex, "native-1", "first"),
-                managed_event("ev-2", AgentKind::Codex, "native-1", "second"),
+                managed_event("ev-1", AgentKind::Other, "native-1", "first"),
+                managed_event("ev-2", AgentKind::Other, "native-1", "second"),
             ],
             complete: true,
             segment_path: Some("segment.jsonl".into()),
@@ -6446,7 +6464,7 @@ mod tests {
         assert!(
             store
                 .writer
-                .link_managed_run_session(run.run_id, AgentKind::Codex, "native-1")
+                .link_managed_run_session(run.run_id, AgentKind::Other, "native-1")
                 .await
                 .unwrap()
         );
@@ -6468,8 +6486,8 @@ mod tests {
                     native_session_id: Some("native-1".into()),
                     source_cursor: None,
                     events: vec![
-                        managed_event("ev-1", AgentKind::Codex, "native-1", "valid"),
-                        managed_event("ev-2", AgentKind::ClaudeCode, "native-1", "foreign agent"),
+                        managed_event("ev-1", AgentKind::Other, "native-1", "valid"),
+                        managed_event("ev-2", AgentKind::Cursor, "native-1", "foreign agent"),
                     ],
                     complete: false,
                     segment_path: None,
@@ -6525,7 +6543,7 @@ mod tests {
                     source_cursor: None,
                     events: vec![managed_event(
                         "ev-3",
-                        AgentKind::Codex,
+                        AgentKind::Other,
                         "native-2",
                         "foreign session",
                     )],
@@ -6557,7 +6575,7 @@ mod tests {
                     run_id: run.run_id,
                     native_session_id: Some("native-1".into()),
                     source_cursor: None,
-                    events: vec![managed_event("ev-1", AgentKind::Codex, "native-1", "valid")],
+                    events: vec![managed_event("ev-1", AgentKind::Other, "native-1", "valid")],
                     complete: true,
                     segment_path: None,
                     exit_code: Some(0),
@@ -6671,7 +6689,7 @@ mod tests {
             workspace_id: ws,
             project_id: proj,
             from_session_id: None,
-            from_agent: AgentKind::ClaudeCode,
+            from_agent: AgentKind::Other,
             to_agent: None,
             cwd: None,
             summary: "continue".into(),
@@ -6684,7 +6702,7 @@ mod tests {
             handoff_id,
             workspace_id: ws,
             project_id: proj,
-            accepting_agent: AgentKind::Codex,
+            accepting_agent: AgentKind::Other,
             accepting_session: None,
             accepting_user: None,
             owner_filter: ai_memory_core::OwnerFilter::Any,
@@ -6759,7 +6777,7 @@ mod tests {
                     id: session_id,
                     workspace_id,
                     project_id,
-                    agent_kind: AgentKind::ClaudeCode,
+                    agent_kind: AgentKind::Other,
                     cwd: Some(cwd.into()),
                     actor_user: None,
                 })
@@ -6771,7 +6789,7 @@ mod tests {
                     workspace_id,
                     project_id,
                     from_session_id: Some(session_id),
-                    from_agent: AgentKind::ClaudeCode,
+                    from_agent: AgentKind::Other,
                     to_agent: None,
                     cwd: Some(cwd.into()),
                     summary: cwd.into(),
@@ -6839,9 +6857,9 @@ mod tests {
                 complete_finish(
                     first.run_id,
                     vec![
-                        managed_event("ev-1", AgentKind::Codex, "native-x", "one"),
-                        managed_event("ev-2", AgentKind::Codex, "native-x", "two"),
-                        managed_event("ev-3", AgentKind::Codex, "native-x", "three"),
+                        managed_event("ev-1", AgentKind::Other, "native-x", "one"),
+                        managed_event("ev-2", AgentKind::Other, "native-x", "two"),
+                        managed_event("ev-3", AgentKind::Other, "native-x", "three"),
                     ],
                 ),
             )
@@ -6950,11 +6968,11 @@ mod tests {
                 complete_finish(
                     run.run_id,
                     vec![
-                        managed_event("ev-1", AgentKind::Codex, "native-x", "alpha one"),
-                        managed_event("ev-2", AgentKind::Codex, "native-x", "alpha two"),
-                        managed_event("ev-3", AgentKind::Codex, "native-x", "alpha zebra three"),
-                        managed_event("ev-4", AgentKind::Codex, "native-x", "alpha four"),
-                        managed_event("ev-5", AgentKind::Codex, "native-x", "alpha five"),
+                        managed_event("ev-1", AgentKind::Other, "native-x", "alpha one"),
+                        managed_event("ev-2", AgentKind::Other, "native-x", "alpha two"),
+                        managed_event("ev-3", AgentKind::Other, "native-x", "alpha zebra three"),
+                        managed_event("ev-4", AgentKind::Other, "native-x", "alpha four"),
+                        managed_event("ev-5", AgentKind::Other, "native-x", "alpha five"),
                     ],
                 ),
             )
@@ -7057,7 +7075,7 @@ mod tests {
             assert!(
                 !store
                     .writer
-                    .link_managed_run_session(run.run_id, AgentKind::Codex, blank)
+                    .link_managed_run_session(run.run_id, AgentKind::Other, blank)
                     .await
                     .unwrap(),
                 "blank native session ids are ignored"
@@ -7066,7 +7084,7 @@ mod tests {
         assert!(
             !store
                 .writer
-                .link_managed_run_session(run.run_id, AgentKind::ClaudeCode, "native-1")
+                .link_managed_run_session(run.run_id, AgentKind::Cursor, "native-1")
                 .await
                 .unwrap(),
             "a different harness cannot claim the run"
@@ -7074,7 +7092,7 @@ mod tests {
         assert!(
             !store
                 .writer
-                .link_managed_run_session(ManagedRunId::new(), AgentKind::Codex, "native-1")
+                .link_managed_run_session(ManagedRunId::new(), AgentKind::Other, "native-1")
                 .await
                 .unwrap(),
             "unknown runs cannot be linked"
@@ -7083,7 +7101,7 @@ mod tests {
         assert!(
             store
                 .writer
-                .link_managed_run_session(run.run_id, AgentKind::Codex, "native-1")
+                .link_managed_run_session(run.run_id, AgentKind::Other, "native-1")
                 .await
                 .unwrap()
         );
@@ -7103,7 +7121,7 @@ mod tests {
         assert!(
             !store
                 .writer
-                .link_managed_run_session(run.run_id, AgentKind::Codex, "native-2")
+                .link_managed_run_session(run.run_id, AgentKind::Other, "native-2")
                 .await
                 .unwrap(),
             "inactive runs cannot be linked"
@@ -7182,12 +7200,12 @@ mod tests {
 
         let older = store
             .writer
-            .prepare_workstream_run(prepare("older", AgentKind::OpenCode))
+            .prepare_workstream_run(prepare("older", AgentKind::Other))
             .await
             .unwrap();
         let current = store
             .writer
-            .prepare_workstream_run(prepare("current", AgentKind::Codex))
+            .prepare_workstream_run(prepare("current", AgentKind::Other))
             .await
             .unwrap();
         store
@@ -7216,7 +7234,7 @@ mod tests {
         let claude = store
             .writer
             .prepare_workstream_run(PrepareWorkstreamRun {
-                agent: AgentKind::ClaudeCode,
+                agent: AgentKind::Cursor,
                 selection: WorkstreamSelection::Named("current".into()),
                 ..managed_prepare_input(ws, proj, "claude")
             })
@@ -7300,9 +7318,9 @@ mod tests {
         assert!(!rows[1].current);
         assert_eq!(
             rows[0].linked_harnesses,
-            [AgentKind::ClaudeCode, AgentKind::Codex]
+            [AgentKind::Cursor, AgentKind::Other]
         );
-        assert_eq!(rows[1].linked_harnesses, [AgentKind::OpenCode]);
+        assert_eq!(rows[1].linked_harnesses, [AgentKind::Other]);
         assert!(rows[0].last_active_at >= rows[0].created_at);
         let limited = store
             .reader
@@ -7314,7 +7332,7 @@ mod tests {
         assert!(limited[0].current);
         assert_eq!(
             limited[0].linked_harnesses,
-            [AgentKind::ClaudeCode, AgentKind::Codex]
+            [AgentKind::Cursor, AgentKind::Other]
         );
         let second_page = store
             .reader
@@ -7323,7 +7341,7 @@ mod tests {
             .unwrap();
         assert_eq!(second_page.len(), 1);
         assert_eq!(second_page[0].workstream_id, older.workstream_id);
-        assert_eq!(second_page[0].linked_harnesses, [AgentKind::OpenCode]);
+        assert_eq!(second_page[0].linked_harnesses, [AgentKind::Other]);
         assert!(!second_page[0].current);
         assert!(
             store

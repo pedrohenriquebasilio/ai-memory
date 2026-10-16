@@ -57,7 +57,7 @@ async fn prompt(fx: &Fixture, project: &str, body: &str) -> ProjectId {
             id,
             workspace_id: fx.ws,
             project_id: proj,
-            agent_kind: AgentKind::ClaudeCode,
+            agent_kind: AgentKind::Other,
             cwd: None,
             actor_user: None,
         })

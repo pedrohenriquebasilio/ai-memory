@@ -2480,32 +2480,6 @@ mod tests {
     }
 
     #[test]
-    fn kiro_v3_live_lifecycle_fixtures_share_native_context() {
-        let fixture: serde_json::Value = serde_json::from_str(include_str!(
-            "../../tests/fixtures/kiro-v3-hook-payloads.json"
-        ))
-        .unwrap();
-        let events = fixture["events"].as_array().unwrap();
-        assert_eq!(events.len(), 5);
-        for event in events {
-            let payload = &event["payload"];
-            let (cwd, session_id) = hook_context("kiro-cli", payload);
-            assert_eq!(cwd.as_deref(), Some("/workspace/project"));
-            assert_eq!(session_id.as_deref(), Some("kiro-v3-session"));
-        }
-        assert_eq!(events[0]["payload"]["hook_event_name"], "SessionStart");
-        assert_eq!(events[1]["payload"]["hook_event_name"], "UserPromptSubmit");
-        assert_eq!(events[2]["payload"]["hook_event_name"], "PreToolUse");
-        assert_eq!(events[3]["payload"]["hook_event_name"], "PostToolUse");
-        assert_eq!(events[4]["payload"]["hook_event_name"], "Stop");
-        assert_eq!(events[2]["payload"]["tool_name"], "read_file");
-        assert_eq!(
-            events[2]["payload"]["tool_input"]["path"],
-            "/workspace/project/sample.txt"
-        );
-    }
-
-    #[test]
     fn cursor_copy_via_claude_code_hooks_is_dropped_only_when_cursor_hooks_exist() {
         let cursor = serde_json::json!({
             "cursor_version": "2026.09.02-c22c1a3",

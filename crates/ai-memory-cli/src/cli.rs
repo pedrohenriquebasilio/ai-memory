@@ -243,10 +243,6 @@ pub enum Command {
     /// a failure.
     #[command(hide = true, name = "service-host")]
     ServiceHost(ServiceHostArgs),
-    /// Generate the marketplace plugins under `plugins/` and their catalogs
-    /// (maintainer tool: `bin/release` and the drift test call it).
-    #[command(hide = true, name = "render-plugins")]
-    RenderPlugins(RenderPluginsArgs),
     /// Print MCP server registration snippets for any supported client.
     /// Current values are listed under `--client`; see docs/mcp-install.md
     /// for the full guide.
@@ -3155,14 +3151,6 @@ pub struct ServiceHostArgs {
     /// Run the supervisor in this process instead of starting it detached.
     #[arg(long)]
     pub supervise: bool,
-}
-
-/// Arguments for hidden `render-plugins`.
-#[derive(Debug, Args)]
-pub struct RenderPluginsArgs {
-    /// Repository root to write `plugins/` and the catalogs under.
-    #[arg(long)]
-    pub out: PathBuf,
 }
 
 /// Arguments for `install-hooks`.

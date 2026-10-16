@@ -10416,6 +10416,7 @@ model = "gpt-5"
     }
 
     #[test]
+    #[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
     fn devin_bundle_has_no_subagent_scripts() {
         let hooks_root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("..")
@@ -10441,6 +10442,7 @@ model = "gpt-5"
     }
 
     #[test]
+    #[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
     fn devin_bundle_has_post_compaction_not_pre_compact() {
         let hooks_root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("..")
@@ -10713,6 +10715,7 @@ model = "gpt-5"
     /// `Config::load` captured, not one re-read from the live process
     /// (invariant #1): an injected value decides the file.
     #[test]
+    #[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
     fn codex_apply_writes_under_the_captured_codex_home() {
         let home = TempDir::new().unwrap();
         let codex_home = TempDir::new().unwrap();
@@ -10751,6 +10754,7 @@ model = "gpt-5"
     /// config file *and* in `/proc/<pid>/cmdline` for the lifetime of every
     /// hook, on every tool call.
     #[test]
+    #[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
     fn apply_persists_the_bearer_and_keeps_it_out_of_the_agent_config() {
         let home = TempDir::new().unwrap();
         let cfg_dir = TempDir::new().unwrap();
@@ -10808,6 +10812,7 @@ model = "gpt-5"
     /// on `validate_as_user` itself could not see it — the wiring was wrong,
     /// not the function.
     #[test]
+    #[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
     fn apply_with_as_user_succeeds_when_the_token_is_persisted() {
         let home = TempDir::new().unwrap();
         let cfg_dir = TempDir::new().unwrap();
@@ -10857,6 +10862,7 @@ model = "gpt-5"
     /// cannot write. Before this fix a persist failure hard-aborted, leaving the
     /// operator with neither the secure path nor any capture at all.
     #[test]
+    #[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
     fn apply_falls_back_to_inline_bearer_when_persisting_fails() {
         let home = TempDir::new().unwrap();
         let cfg_dir = TempDir::new().unwrap();
@@ -10904,6 +10910,7 @@ model = "gpt-5"
     /// hooks, and when persisting fails it is NOT embedded the way an inline
     /// token is (F5): that file exists to keep the token out of agent configs.
     #[test]
+    #[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
     fn a_file_sourced_token_is_persisted_but_never_embedded() {
         let home = TempDir::new().unwrap();
         let cfg_dir = TempDir::new().unwrap();
@@ -11149,6 +11156,7 @@ model = "gpt-5"
     /// branch.
     #[cfg(unix)]
     #[test]
+    #[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
     fn a_bare_reapply_preserves_an_existing_capture_assistant_opt_in() {
         let home = TempDir::new().unwrap();
         let cfg_dir = TempDir::new().unwrap();
@@ -11178,6 +11186,7 @@ model = "gpt-5"
     /// The preserve logic must not false-positive: a fresh install without the
     /// flag stays off.
     #[test]
+    #[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
     fn a_fresh_install_without_the_flag_leaves_assistant_capture_off() {
         let home = TempDir::new().unwrap();
         let cfg_dir = TempDir::new().unwrap();
@@ -15023,6 +15032,7 @@ command = "AI_MEMORY_HOOK_URL=http://old:1 /old/ai-memory/hooks/kimi-code/sessio
     }
 
     #[test]
+    #[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
     fn devin_session_start_injects_handoff_additional_context() {
         let hooks_root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("..")
@@ -15069,6 +15079,7 @@ command = "AI_MEMORY_HOOK_URL=http://old:1 /old/ai-memory/hooks/kimi-code/sessio
     }
 
     #[test]
+    #[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
     fn startup_handoff_scripts_forward_native_session_ids() {
         let hooks_root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("..")

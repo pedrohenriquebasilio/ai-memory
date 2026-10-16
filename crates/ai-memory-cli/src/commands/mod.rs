@@ -90,7 +90,6 @@ pub mod recovery;
 pub mod reindex;
 pub mod rename_project;
 pub mod rename_workstream;
-pub mod render_plugins;
 pub mod render_shared;
 pub mod reorg;
 pub mod repair_backfill_timestamps;

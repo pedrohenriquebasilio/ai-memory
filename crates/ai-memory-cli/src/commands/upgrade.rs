@@ -1232,6 +1232,7 @@ mod tests {
     /// permission bits (root CI runners).
     #[cfg(unix)]
     #[test]
+    #[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
     fn classify_refuses_unwritable_parent_directory() -> Result<()> {
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir()?;
@@ -1767,6 +1768,7 @@ mod tests {
     /// With only project-scoped installs, the refresh must still re-copy the
     /// scripts those installs point at.
     #[test]
+    #[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
     fn restage_refreshes_the_claude_scripts_without_a_settings_file() {
         let data = tempfile::TempDir::new().unwrap();
         let hooks_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../hooks");

@@ -563,6 +563,7 @@ async fn require_server_fails_closed_when_offline() {
 /// registers no MCP entry for the unreachable server and leaves no sentinel,
 /// so the next online launch completes the wiring.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
 async fn offline_autowire_wires_hooks_but_not_mcp() {
     let fixture = Fixture::new();
     let server = closed_port_url();

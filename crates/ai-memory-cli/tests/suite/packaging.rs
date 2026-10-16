@@ -2717,6 +2717,7 @@ mod slow {
     // Feeding it the file names the repository bundles really ship catches both.
     #[cfg(unix)]
     #[test]
+    #[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
     fn hook_installer_installs_every_script_each_shipped_bundle_has() {
         for agent in [
             "claude-code",

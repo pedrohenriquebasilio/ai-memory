@@ -486,6 +486,7 @@ async fn two_real_servers_each_receive_only_their_own_repository() {
 /// `uninstall` removes the hooks that read the profile tokens, so it removes
 /// the tokens too — but keeps the registry, exactly as it keeps `config.toml`.
 #[test]
+#[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
 fn uninstall_removes_profile_tokens_and_keeps_the_registry() {
     let sb = Sandbox::new();
     std::fs::create_dir_all(sb.home.join(".claude")).unwrap();

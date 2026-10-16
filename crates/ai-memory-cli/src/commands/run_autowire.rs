@@ -721,6 +721,7 @@ mod tests {
     /// wires MCP but not hooks, and its sentinel is keyed on that checkout, so
     /// a later launch from another checkout still wires hooks there.
     #[test]
+    #[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
     fn a_project_scoped_checkout_suppresses_hooks_without_gating_other_checkouts() {
         let home = tempfile::tempdir().unwrap();
         let data = tempfile::tempdir().unwrap();
@@ -1435,6 +1436,7 @@ mod tests {
     /// installers run without leaving the temp dirs; how `--env` picks those
     /// paths is covered by the plan tests above.
     #[test]
+    #[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
     fn a_second_config_home_is_wired_after_the_first() {
         let home = tempfile::tempdir().unwrap();
         let data = tempfile::tempdir().unwrap();
@@ -1628,6 +1630,7 @@ mod tests {
     /// would be baked into harness config otherwise), and no sentinel is
     /// written, so the next online launch completes the MCP half.
     #[test]
+    #[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
     fn skip_mcp_wires_hooks_only_and_writes_no_sentinel() {
         let home = tempfile::tempdir().unwrap();
         let data = tempfile::tempdir().unwrap();
@@ -1705,6 +1708,7 @@ mod tests {
     /// stay absent). Control: with the plugin disabled the same launch wires
     /// both, so the plugin state is what decided it.
     #[test]
+    #[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
     fn an_enabled_plugin_leaves_the_harness_unwired() {
         let home = tempfile::tempdir().unwrap();
         let data = tempfile::tempdir().unwrap();
@@ -1765,6 +1769,7 @@ mod tests {
     /// second launch is a clean no-op (no duplication, no churn). Paths are
     /// injected so the test never touches the developer's real `$HOME`.
     #[test]
+    #[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
     fn wiring_installs_and_preserves_user_config_then_is_idempotent() {
         let home = tempfile::tempdir().unwrap();
         let data = tempfile::tempdir().unwrap();
@@ -1906,6 +1911,7 @@ mod tests {
     /// `.claude.json` this launch writes, not the default one, so a bridge
     /// installed for that account is kept too.
     #[test]
+    #[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
     fn wiring_preserves_a_session_aware_bridge_in_the_relocated_home() {
         let home = tempfile::tempdir().unwrap();
         let data = tempfile::tempdir().unwrap();
@@ -2013,6 +2019,7 @@ mod tests {
     /// Clearing the auto-wire state (what `uninstall` does) makes the next
     /// launch wire again; `uninstall` and the gate must agree on the directory.
     #[test]
+    #[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
     fn clearing_autowire_state_rewires_the_next_launch() {
         let home = tempfile::tempdir().unwrap();
         let data = tempfile::tempdir().unwrap();

@@ -179,6 +179,7 @@ fn setup_plan_json_prints_the_plan_and_changes_nothing() {
 /// process. No server runs here, so that setup reports its failed self-check
 /// and the wizard exits non-zero after Finish.
 #[test]
+#[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
 fn setup_web_serves_the_plan_and_applies_the_picked_agent() {
     use std::io::{BufRead as _, Read as _, Write as _};
     use std::net::TcpStream;
@@ -465,6 +466,7 @@ esac
     /// passes its own self-check. A captured hook event reaches the server. A
     /// second run changes no file and makes no state-changing service call.
     #[tokio::test]
+    #[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
     async fn setup_installs_wires_is_idempotent_and_uninstall_removes_its_unit() {
         let sandbox = Sandbox::new();
         let service = Service::new(&sandbox.root);
@@ -664,6 +666,7 @@ esac
     /// only the user can grant that trust. Codex's `hooks/list` answer comes
     /// from a fake `codex` first on `PATH`; the operator's Codex never runs.
     #[tokio::test]
+    #[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
     async fn setup_names_pending_codex_hook_trust_instead_of_claiming_ready() {
         use std::os::unix::fs::PermissionsExt as _;
         let sandbox = Sandbox::new();

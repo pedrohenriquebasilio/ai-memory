@@ -1066,7 +1066,7 @@ mod tests {
             workspace_id,
             project_id,
             from_session_id: None,
-            from_agent: ai_memory_core::AgentKind::ClaudeCode,
+            from_agent: ai_memory_core::AgentKind::Other,
             to_agent: None,
             cwd: None,
             summary: summary.into(),

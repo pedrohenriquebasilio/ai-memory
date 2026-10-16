@@ -94,7 +94,7 @@ async fn say(
             id,
             workspace_id: fx.ws,
             project_id: proj,
-            agent_kind: AgentKind::ClaudeCode,
+            agent_kind: AgentKind::Other,
             cwd: None,
             actor_user: owner.map(|name| IdentityKey::User(name.into()).storage_key()),
         })

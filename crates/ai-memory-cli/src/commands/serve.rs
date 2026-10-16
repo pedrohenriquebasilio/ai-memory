@@ -4631,7 +4631,7 @@ mod tests {
                 id: session_id,
                 workspace_id,
                 project_id: worked_in,
-                agent_kind: AgentKind::ClaudeCode,
+                agent_kind: AgentKind::Other,
                 cwd: None,
                 actor_user: None,
             })
@@ -4734,7 +4734,7 @@ mod tests {
                 id: session_id,
                 workspace_id,
                 project_id: elsewhere,
-                agent_kind: AgentKind::ClaudeCode,
+                agent_kind: AgentKind::Other,
                 cwd: None,
                 actor_user: None,
             })
@@ -4798,7 +4798,7 @@ mod tests {
                 id: session_id,
                 workspace_id,
                 project_id,
-                agent_kind: AgentKind::Codex,
+                agent_kind: AgentKind::Other,
                 cwd: None,
                 actor_user: None,
             })
@@ -4905,7 +4905,7 @@ mod tests {
                 id: session_id,
                 workspace_id,
                 project_id,
-                agent_kind: AgentKind::Codex,
+                agent_kind: AgentKind::Other,
                 cwd: None,
                 actor_user: None,
             })
@@ -5010,7 +5010,7 @@ mod tests {
                 id: session_id,
                 workspace_id,
                 project_id,
-                agent_kind: AgentKind::Codex,
+                agent_kind: AgentKind::Other,
                 cwd: None,
                 actor_user: Some("user:alice".into()),
             })
@@ -5110,7 +5110,7 @@ mod tests {
                 id: session_id,
                 workspace_id,
                 project_id,
-                agent_kind: AgentKind::Codex,
+                agent_kind: AgentKind::Other,
                 cwd: None,
                 actor_user: None,
             })
@@ -5245,7 +5245,7 @@ mod tests {
                 id: session_id,
                 workspace_id,
                 project_id,
-                agent_kind: AgentKind::Codex,
+                agent_kind: AgentKind::Other,
                 cwd: None,
                 actor_user: None,
             })
@@ -5429,7 +5429,7 @@ mod tests {
                 id: session_id,
                 workspace_id,
                 project_id,
-                agent_kind: AgentKind::Codex,
+                agent_kind: AgentKind::Other,
                 cwd: None,
                 actor_user: None,
             })

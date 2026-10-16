@@ -51,7 +51,7 @@ pub(crate) async fn session(store: &Store, ws: WorkspaceId, proj: ProjectId) -> 
             id,
             workspace_id: ws,
             project_id: proj,
-            agent_kind: AgentKind::ClaudeCode,
+            agent_kind: AgentKind::Other,
             cwd: Some("/repo".into()),
             actor_user: None,
         })
@@ -354,7 +354,7 @@ async fn stream_off_ranks_byte_identically_to_a_store_without_observations() {
                     id,
                     workspace_id: ws,
                     project_id: proj,
-                    agent_kind: AgentKind::ClaudeCode,
+                    agent_kind: AgentKind::Other,
                     cwd: None,
                     actor_user: None,
                 })

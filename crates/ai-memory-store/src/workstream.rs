@@ -922,7 +922,7 @@ pub(crate) fn link_or_adopt_native_session(
             }
             (input.supplied_run_id, false)
         }
-        _ if input.agent == AgentKind::Codex => {
+        _ if input.agent == AgentKind::Other => {
             let mut statement = tx.prepare(
                 "SELECT mr.id FROM managed_runs mr \
                  JOIN workstreams w ON w.id = mr.workstream_id \

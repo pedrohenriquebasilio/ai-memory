@@ -1561,7 +1561,7 @@ mod tests {
     fn event(kind: WorkstreamEventKind, role: Option<&str>, content: &str) -> NewWorkstreamEvent {
         NewWorkstreamEvent {
             event_id: "evt-1".to_string(),
-            agent: ai_memory_core::AgentKind::ClaudeCode,
+            agent: ai_memory_core::AgentKind::Other,
             native_session_id: "sid".to_string(),
             source_record_id: None,
             kind,
@@ -1627,67 +1627,6 @@ mod tests {
             replay_ingest_key(Some("journal-2"), &session, "message", &event),
             "one journal interval must replay stably"
         );
-    }
-
-    #[test]
-    fn prompt_replay_keeps_only_user_prompts_with_backfill_keys() {
-        let endpoint = ServerEndpoint::for_hook_target("http://127.0.0.1:1".into(), None);
-        let with_id = |id: &str, mut e: NewWorkstreamEvent| {
-            e.event_id = id.to_string();
-            e
-        };
-        let events = [
-            with_id(
-                "p1",
-                event(WorkstreamEventKind::Message, Some("user"), "first ask"),
-            ),
-            with_id(
-                "a1",
-                event(WorkstreamEventKind::Message, Some("assistant"), "an answer"),
-            ),
-            with_id(
-                "t1",
-                event(WorkstreamEventKind::ToolCall, None, "run tests"),
-            ),
-            with_id(
-                "p2",
-                event(WorkstreamEventKind::Message, Some("user"), "second ask"),
-            ),
-        ];
-        let items = prompt_hook_items(
-            &endpoint,
-            "ws",
-            "proj",
-            ManagedHarness::Antigravity,
-            "sid",
-            &events,
-        )
-        .unwrap();
-        assert_eq!(items.len(), 2, "only the two user prompts are replayed");
-        for (item, (id, prompt)) in items
-            .iter()
-            .zip([("p1", "first ask"), ("p2", "second ask")])
-        {
-            let url = reqwest::Url::parse(&item.url).unwrap();
-            let query = |name: &str| {
-                url.query_pairs()
-                    .find(|(key, _)| key == name)
-                    .map(|(_, value)| value.into_owned())
-            };
-            assert_eq!(query("event").as_deref(), Some("user-prompt"));
-            assert_eq!(query("agent").as_deref(), Some("antigravity-cli"));
-            assert_eq!(
-                query("extension"),
-                None,
-                "a prompt is not a backfill extension"
-            );
-            assert_eq!(
-                query("ingest_key"),
-                Some(replay_ingest_key(None, "sid", "message", id)),
-                "the key matches what backfill mints for the same event"
-            );
-            assert_eq!(item.body["prompt"], prompt);
-        }
     }
 
     #[test]
@@ -2695,61 +2634,6 @@ mod tests {
         dir
     }
 
-    /// Codex records its shell tool as `exec_command` with `{cmd, workdir}`;
-    /// the live hook receives it as `Bash`. A command whose `workdir`-relative
-    /// argument names an ignored path never reaches `/hook/batch`, call or
-    /// output; the same command run from a public directory does.
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn backfill_inspects_codex_exec_command_as_the_hook_shell_call() {
-        let home = tempfile::tempdir().unwrap();
-        let repo = marked_checkout("[capture]\nignore_paths = [\"docs/adr/**\"]\n");
-        for dir in ["docs/adr", "src/adr"] {
-            std::fs::create_dir_all(repo.path().join(dir)).unwrap();
-        }
-        let sid = "019a0000-0000-7000-8000-000000000001";
-        let item = |payload: serde_json::Value| {
-            serde_json::json!({
-                "type": "response_item", "timestamp": "2026-09-01T10:00:00Z", "payload": payload,
-            })
-        };
-        let exec = |id: &str, workdir: &str| {
-            item(serde_json::json!({
-                "type": "function_call", "name": "exec_command", "call_id": id,
-                "arguments": serde_json::json!({
-                    "cmd": "cat adr/x.md", "workdir": repo.path().join(workdir),
-                }).to_string(),
-            }))
-        };
-        let output = |id: &str, text: &str| {
-            item(serde_json::json!({"type": "function_call_output", "call_id": id, "output": text}))
-        };
-        let lines = [
-            serde_json::json!({"type": "session_meta", "payload": {"id": sid, "cwd": repo.path()}}),
-            item(serde_json::json!({
-                "type": "message", "role": "user",
-                "content": [{"type": "input_text", "text": "show both adr notes"}],
-            })),
-            exec("call_adr", "docs"),
-            output("call_adr", "ADRSENTINEL private decision"),
-            exec("call_pub", "src"),
-            output("call_pub", "PUBLICCONTROL public note"),
-        ];
-        let posted = backfill_posted(
-            ManagedHarness::Codex,
-            home.path(),
-            home.path(),
-            repo.path(),
-            sid,
-            &lines,
-        )
-        .await;
-        assert!(!posted.contains("ADRSENTINEL"), "excluded output: {posted}");
-        assert!(!posted.contains("/docs\\\""), "excluded call: {posted}");
-        assert!(posted.contains("PUBLICCONTROL"), "public output: {posted}");
-        assert!(posted.contains("/src"), "public call: {posted}");
-    }
-
     /// A Claude Code transcript record: `content` is the message content.
     #[cfg(unix)]
     fn claude_record(
@@ -2931,68 +2815,6 @@ mod tests {
             "control: {posted}"
         );
         assert!(posted.contains("read the notes"), "prompt kept: {posted}");
-    }
-
-    /// The live server stores only the family of an unknown-family tool, with
-    /// no policy at all. A backfilled Codex MCP call and its output therefore
-    /// post only `tool_family: unknown`, never their arguments or output, while
-    /// a recognized shell call's output is posted as before.
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn backfill_posts_no_content_for_unrecognized_tools() {
-        let home = tempfile::tempdir().unwrap();
-        let repo = tempfile::tempdir().unwrap();
-        let sid = "019a0000-0000-7000-8000-000000000002";
-        let item = |payload: serde_json::Value| {
-            serde_json::json!({
-                "type": "response_item", "timestamp": "2026-09-01T10:00:00Z", "payload": payload,
-            })
-        };
-        let call = |id: &str, name: &str, arguments: serde_json::Value| {
-            item(serde_json::json!({
-                "type": "function_call", "name": name, "call_id": id,
-                "arguments": arguments.to_string(),
-            }))
-        };
-        let output = |id: &str, text: &str| {
-            item(serde_json::json!({"type": "function_call_output", "call_id": id, "output": text}))
-        };
-        let lines = [
-            serde_json::json!({"type": "session_meta", "payload": {"id": sid, "cwd": repo.path()}}),
-            call(
-                "call_mcp",
-                "mcp__vault__fetch",
-                serde_json::json!({"query": "ARGSENTINEL"}),
-            ),
-            output("call_mcp", "MCPSENTINEL private record"),
-            call(
-                "call_pub",
-                "exec_command",
-                serde_json::json!({"cmd": "cargo test"}),
-            ),
-            output("call_pub", "PUBLICCONTROL test result"),
-        ];
-        let posted = backfill_posted(
-            ManagedHarness::Codex,
-            home.path(),
-            home.path(),
-            repo.path(),
-            sid,
-            &lines,
-        )
-        .await;
-        for sentinel in ["ARGSENTINEL", "MCPSENTINEL", "mcp__vault"] {
-            assert!(
-                !posted.contains(sentinel),
-                "{sentinel} was posted: {posted}"
-            );
-        }
-        assert_eq!(
-            posted.matches("\"title\":\"tool unknown\"").count(),
-            2,
-            "the call and its output are still recorded: {posted}"
-        );
-        assert!(posted.contains("PUBLICCONTROL"), "control: {posted}");
     }
 
     /// A reroute is delivered only when the destination's marker selects the

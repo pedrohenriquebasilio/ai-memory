@@ -39,7 +39,7 @@ fn seed(db_path: &std::path::Path) {
     for (sid, proj, started) in [(10u8, &b, now), (11, &a, now + 10), (12, &b, now + 20)] {
         conn.execute(
             "INSERT INTO sessions (id, workspace_id, project_id, agent_kind, cwd, started_at) \
-             VALUES (?1, ?2, ?3, 'claude-code', '/w', ?4)",
+             VALUES (?1, ?2, ?3, 'cursor', '/w', ?4)",
             params![&id(sid)[..], &ws[..], &proj[..], started],
         )
         .unwrap();

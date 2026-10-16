@@ -809,7 +809,7 @@ impl Fixture {
                 id: sid,
                 workspace_id: self.ws,
                 project_id: self.proj,
-                agent_kind: AgentKind::ClaudeCode,
+                agent_kind: AgentKind::Other,
                 cwd: None,
                 actor_user: None,
             })
@@ -858,7 +858,7 @@ impl Fixture {
         let reader = &self.store.reader;
         // The original path: every row, then the original row-list code.
         let rows = reader.observations_for_session(sid).await.unwrap();
-        let agent = AgentKind::ClaudeCode;
+        let agent = AgentKind::Other;
         let old_page = full_load::synthesize_session_page(self.ws, self.proj, sid, agent, &rows);
 
         let digest = SessionDigest::load(reader, self.ws, self.proj, sid)

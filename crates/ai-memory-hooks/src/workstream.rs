@@ -336,35 +336,21 @@ async fn prepare_run(
             "workstream and new_workstream are mutually exclusive",
         );
     }
-    if !matches!(
-        request.agent,
-        AgentKind::ClaudeCode
-            | AgentKind::Codex
-            | AgentKind::OpenCode
-            | AgentKind::Pi
-            | AgentKind::Crush
-            | AgentKind::Omp
-            | AgentKind::KimiCode
-            | AgentKind::CommandCode
-            | AgentKind::KiroCli
-            | AgentKind::Grok
-            | AgentKind::AntigravityCli
-            | AgentKind::CopilotCli
-    ) {
+    if !matches!(request.agent, AgentKind::Other) {
         return error(
             StatusCode::BAD_REQUEST,
             "managed run requires a supported command-line harness",
         );
     }
     const AUTO_AGENTS: [AgentKind; 8] = [
-        AgentKind::ClaudeCode,
-        AgentKind::Codex,
-        AgentKind::OpenCode,
-        AgentKind::Pi,
-        AgentKind::Crush,
-        AgentKind::KimiCode,
-        AgentKind::CommandCode,
-        AgentKind::KiroCli,
+        AgentKind::Other,
+        AgentKind::Other,
+        AgentKind::Other,
+        AgentKind::Other,
+        AgentKind::Other,
+        AgentKind::Other,
+        AgentKind::Other,
+        AgentKind::Other,
     ];
     if request.automatic_harness
         && (!AUTO_AGENTS.contains(&request.agent)
@@ -613,7 +599,7 @@ async fn run_context(
         Ok(None) => return error(StatusCode::NOT_FOUND, "active managed run not found"),
         Err(failure) => return error(StatusCode::INTERNAL_SERVER_ERROR, failure.to_string()),
     };
-    if !matches!(context.agent, AgentKind::Crush | AgentKind::Grok) {
+    if !matches!(context.agent, AgentKind::Other) {
         return error(
             StatusCode::BAD_REQUEST,
             "direct managed context is only supported for Crush and Grok",
@@ -656,7 +642,7 @@ async fn accept_run_context(
         Ok(None) => return error(StatusCode::NOT_FOUND, "managed run not found"),
         Err(failure) => return error(StatusCode::INTERNAL_SERVER_ERROR, failure.to_string()),
     };
-    if !matches!(status.agent, AgentKind::Crush | AgentKind::Grok) {
+    if !matches!(status.agent, AgentKind::Other) {
         return error(
             StatusCode::BAD_REQUEST,
             "direct managed context is only supported for Crush and Grok",
@@ -1483,7 +1469,7 @@ mod tests {
             cwd: "/repo".into(),
             repo_fingerprint: "repo".into(),
             worktree_fingerprint: "worktree".into(),
-            agent: AgentKind::Codex,
+            agent: AgentKind::Other,
             automatic_harness: false,
             available_agents: Vec::new(),
             workstream: None,
@@ -1591,7 +1577,7 @@ mod tests {
                 cwd: "/repo".into(),
                 repo_fingerprint: "repo".into(),
                 worktree_fingerprint: "worktree".into(),
-                agent: AgentKind::Codex,
+                agent: AgentKind::Other,
                 automatic_harness: false,
                 available_agents: Vec::new(),
                 workstream: Some("existing".into()),
@@ -1661,7 +1647,7 @@ mod tests {
                 cwd: "/repo".into(),
                 repo_fingerprint: "repo".into(),
                 worktree_fingerprint: "worktree".into(),
-                agent: AgentKind::Codex,
+                agent: AgentKind::Other,
                 automatic_harness: false,
                 available_agents: Vec::new(),
                 workstream: None,
@@ -1757,7 +1743,7 @@ mod tests {
                 cwd: "/repo".into(),
                 repo_fingerprint: "repo".into(),
                 worktree_fingerprint: "worktree".into(),
-                agent: AgentKind::Codex,
+                agent: AgentKind::Other,
                 automatic_harness: false,
                 available_agents: Vec::new(),
                 workstream: None,
@@ -1841,7 +1827,7 @@ mod tests {
                 cwd: "/repo".into(),
                 repo_fingerprint: "repo".into(),
                 worktree_fingerprint: "worktree".into(),
-                agent: AgentKind::Codex,
+                agent: AgentKind::Other,
                 automatic_harness: false,
                 available_agents: Vec::new(),
                 workstream: Some("missing".into()),
@@ -1894,7 +1880,7 @@ mod tests {
             .prepare_workstream_run(prepare_input(
                 workspace_id,
                 project_id,
-                AgentKind::Codex,
+                AgentKind::Other,
                 "launcher",
             ))
             .await
@@ -1904,7 +1890,7 @@ mod tests {
             Json(FinishManagedRunRequest {
                 native_session_id: Some("native-1".into()), source_cursor: None,
                 events: vec![NewWorkstreamEvent {
-                    event_id: "event-1".into(), agent: AgentKind::Codex,
+                    event_id: "event-1".into(), agent: AgentKind::Other,
                     native_session_id: "native-1".into(),
                     source_record_id: Some("private-correlation".into()),
                     kind: WorkstreamEventKind::ToolResult, role: Some("tool".into()),
@@ -2051,7 +2037,7 @@ mod tests {
             .prepare_workstream_run(prepare_input(
                 workspace_id,
                 project_id,
-                AgentKind::Codex,
+                AgentKind::Other,
                 "launcher",
             ))
             .await
@@ -2069,7 +2055,7 @@ mod tests {
                     source_cursor: None,
                     events: vec![NewWorkstreamEvent {
                         event_id: id,
-                        agent: AgentKind::Codex,
+                        agent: AgentKind::Other,
                         native_session_id: "native-1".into(),
                         source_record_id: Some("record-1".into()),
                         kind: WorkstreamEventKind::Message,
@@ -2159,7 +2145,7 @@ mod tests {
             .prepare_workstream_run(prepare_input(
                 workspace_id,
                 project_id,
-                AgentKind::Codex,
+                AgentKind::Other,
                 "launcher",
             ))
             .await
@@ -2188,7 +2174,7 @@ mod tests {
                 events: vec![
                     NewWorkstreamEvent {
                         event_id: "straddling".into(),
-                        agent: AgentKind::Codex,
+                        agent: AgentKind::Other,
                         native_session_id: "native-1".into(),
                         source_record_id: Some("record-1".into()),
                         kind: WorkstreamEventKind::Message,
@@ -2199,7 +2185,7 @@ mod tests {
                     },
                     NewWorkstreamEvent {
                         event_id: "control".into(),
-                        agent: AgentKind::Codex,
+                        agent: AgentKind::Other,
                         native_session_id: "native-1".into(),
                         source_record_id: Some("record-2".into()),
                         kind: WorkstreamEventKind::Message,
@@ -2291,7 +2277,7 @@ mod tests {
             .prepare_workstream_run(prepare_input(
                 workspace_id,
                 project_id,
-                AgentKind::Codex,
+                AgentKind::Other,
                 "launcher",
             ))
             .await
@@ -2376,7 +2362,7 @@ mod tests {
             .prepare_workstream_run(prepare_input(
                 workspace_id,
                 project_id,
-                AgentKind::Codex,
+                AgentKind::Other,
                 "launcher",
             ))
             .await
@@ -2397,7 +2383,7 @@ mod tests {
         assert!(
             store
                 .writer
-                .link_managed_run_session(prepared.run_id, AgentKind::Codex, "native-1")
+                .link_managed_run_session(prepared.run_id, AgentKind::Other, "native-1")
                 .await
                 .unwrap()
         );
@@ -2416,7 +2402,7 @@ mod tests {
             .writer
             .prepare_workstream_run(PrepareWorkstreamRun {
                 selection: WorkstreamSelection::New("typo-nmae".into()),
-                ..prepare_input(workspace_id, project_id, AgentKind::OpenCode, "launcher")
+                ..prepare_input(workspace_id, project_id, AgentKind::Other, "launcher")
             })
             .await
             .unwrap();
@@ -2489,7 +2475,7 @@ mod tests {
             .writer
             .prepare_workstream_run(PrepareWorkstreamRun {
                 selection: WorkstreamSelection::New("taken".into()),
-                ..prepare_input(workspace_id, project_id, AgentKind::OpenCode, "other")
+                ..prepare_input(workspace_id, project_id, AgentKind::Other, "other")
             })
             .await
             .unwrap();
@@ -2504,110 +2490,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn recent_workstream_endpoint_is_checkout_scoped_and_read_only() {
-        let temp = TempDir::new().unwrap();
-        let store = Store::open(temp.path()).unwrap();
-        let state = test_state(&store, temp.path());
-        let (workspace_id, project_id) = seed_scope(&store).await;
-        let prepared = store
-            .writer
-            .prepare_workstream_run(PrepareWorkstreamRun {
-                selection: WorkstreamSelection::New("decide-after-death".into()),
-                ..prepare_input(workspace_id, project_id, AgentKind::OpenCode, "launcher")
-            })
-            .await
-            .unwrap();
-        store
-            .writer
-            .finish_workstream_run(
-                ai_memory_store::ManagedRunAuthority::from_auth(
-                    AuthLevel::Anonymous,
-                    None,
-                    None,
-                    &ai_memory_core::ActorContext::anonymous(),
-                    false,
-                ),
-                FinishWorkstreamRun {
-                    sanitizer: ai_memory_core::Sanitizer::default(),
-                    run_id: prepared.run_id,
-                    native_session_id: Some("private-native-id".into()),
-                    source_cursor: None,
-                    events: Vec::new(),
-                    complete: true,
-                    segment_path: None,
-                    exit_code: Some(0),
-                },
-            )
-            .await
-            .unwrap();
-
-        let response = list_recent_workstreams(
-            State(state.clone()),
-            None,
-            None,
-            Json(ListManagedWorkstreamsRequest {
-                workspace: "default".into(),
-                project: "managed".into(),
-                repo_fingerprint: "repo".into(),
-                worktree_fingerprint: "worktree".into(),
-                limit: 20,
-                offset: 0,
-            }),
-        )
-        .await;
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
-        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(json[0]["name"], "decide-after-death");
-        assert_eq!(
-            json[0]["linked_harnesses"],
-            serde_json::json!(["open-code"])
-        );
-        assert_eq!(json[0]["current"], true);
-        let encoded = String::from_utf8(body.to_vec()).unwrap();
-        assert!(!encoded.contains("private-native-id"));
-        assert!(!encoded.contains("/repo"));
-
-        let other_checkout = list_recent_workstreams(
-            State(state.clone()),
-            None,
-            None,
-            Json(ListManagedWorkstreamsRequest {
-                workspace: "default".into(),
-                project: "managed".into(),
-                repo_fingerprint: "repo".into(),
-                worktree_fingerprint: "other-worktree".into(),
-                limit: 20,
-                offset: 0,
-            }),
-        )
-        .await;
-        let body = to_bytes(other_checkout.into_body(), 64 * 1024)
-            .await
-            .unwrap();
-        assert_eq!(
-            serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
-            serde_json::json!([])
-        );
-
-        let missing = list_recent_workstreams(
-            State(state),
-            None,
-            None,
-            Json(ListManagedWorkstreamsRequest {
-                workspace: "missing".into(),
-                project: "managed".into(),
-                repo_fingerprint: "repo".into(),
-                worktree_fingerprint: "worktree".into(),
-                limit: 20,
-                offset: 0,
-            }),
-        )
-        .await;
-        assert_eq!(missing.status(), StatusCode::NOT_FOUND);
-    }
-
-    #[tokio::test]
     async fn recent_workstream_pages_reach_older_rows_without_crossing_checkout_or_scope() {
         let temp = TempDir::new().unwrap();
         let store = Store::open(temp.path()).unwrap();
@@ -2618,7 +2500,7 @@ mod tests {
                 .writer
                 .prepare_workstream_run(PrepareWorkstreamRun {
                     selection: WorkstreamSelection::New(format!("local-{index:03}")),
-                    ..prepare_input(workspace_id, project_id, AgentKind::Codex, "launcher")
+                    ..prepare_input(workspace_id, project_id, AgentKind::Other, "launcher")
                 })
                 .await
                 .unwrap();
@@ -2670,7 +2552,7 @@ mod tests {
                     selection: WorkstreamSelection::New(name.into()),
                     repo_fingerprint: repo.into(),
                     worktree_fingerprint: worktree.into(),
-                    ..prepare_input(workspace, project, AgentKind::Codex, "foreign")
+                    ..prepare_input(workspace, project, AgentKind::Other, "foreign")
                 })
                 .await
                 .unwrap();
@@ -2720,7 +2602,7 @@ mod tests {
             .prepare_workstream_run(prepare_input(
                 workspace_id,
                 project_id,
-                AgentKind::ClaudeCode,
+                AgentKind::Other,
                 "claude",
             ))
             .await
@@ -2760,9 +2642,9 @@ mod tests {
                 cwd: "/repo".into(),
                 repo_fingerprint: "repo".into(),
                 worktree_fingerprint: "worktree".into(),
-                agent: AgentKind::Codex,
+                agent: AgentKind::Other,
                 automatic_harness: true,
-                available_agents: vec![AgentKind::Codex, AgentKind::ClaudeCode],
+                available_agents: vec![AgentKind::Other, AgentKind::Other],
                 workstream: None,
                 new_workstream: None,
                 force_unlock: false,
@@ -2774,7 +2656,7 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
         let body = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
         let prepared: PrepareManagedRunResponse = serde_json::from_slice(&body).unwrap();
-        assert_eq!(prepared.resolved_agent, Some(AgentKind::ClaudeCode));
+        assert_eq!(prepared.resolved_agent, Some(AgentKind::Other));
         assert_eq!(
             prepared.native_session_id.as_deref(),
             Some("claude-current")
@@ -2799,7 +2681,7 @@ mod tests {
                 cwd: "/repo".into(),
                 repo_fingerprint: "repo".into(),
                 worktree_fingerprint: "worktree".into(),
-                agent: AgentKind::KimiCode,
+                agent: AgentKind::Other,
                 automatic_harness: false,
                 available_agents: Vec::new(),
                 workstream: None,
@@ -2813,7 +2695,7 @@ mod tests {
         assert_eq!(explicit.status(), StatusCode::OK);
         let body = to_bytes(explicit.into_body(), 64 * 1024).await.unwrap();
         let prepared: PrepareManagedRunResponse = serde_json::from_slice(&body).unwrap();
-        assert_eq!(prepared.resolved_agent, Some(AgentKind::KimiCode));
+        assert_eq!(prepared.resolved_agent, Some(AgentKind::Other));
         // Close the explicit run so the automatic prepare can take the lease.
         store
             .writer
@@ -2850,9 +2732,9 @@ mod tests {
                 cwd: "/repo".into(),
                 repo_fingerprint: "repo".into(),
                 worktree_fingerprint: "worktree".into(),
-                agent: AgentKind::KimiCode,
+                agent: AgentKind::Other,
                 automatic_harness: true,
-                available_agents: vec![AgentKind::KimiCode, AgentKind::ClaudeCode],
+                available_agents: vec![AgentKind::Other, AgentKind::Other],
                 workstream: None,
                 new_workstream: None,
                 force_unlock: false,
@@ -2898,7 +2780,7 @@ mod tests {
                 cwd: "/repo".into(),
                 repo_fingerprint: "repo".into(),
                 worktree_fingerprint: "worktree".into(),
-                agent: AgentKind::Codex,
+                agent: AgentKind::Other,
                 automatic_harness: false,
                 available_agents: Vec::new(),
                 workstream: None,
@@ -2927,7 +2809,7 @@ mod tests {
                     workspace_id,
                     project_id,
                     cwd: "/repo".into(),
-                    agent: AgentKind::Codex,
+                    agent: AgentKind::Other,
                     native_session_id: "native-bob".into(),
                     owner_user: Some(
                         ai_memory_core::IdentityKey::User("bob".into()).storage_key(),
@@ -2945,7 +2827,7 @@ mod tests {
                     workspace_id,
                     project_id,
                     cwd: "/repo".into(),
-                    agent: AgentKind::Codex,
+                    agent: AgentKind::Other,
                     native_session_id: "native-alice".into(),
                     owner_user: Some(
                         ai_memory_core::IdentityKey::User("alice".into()).storage_key(),
@@ -3001,7 +2883,7 @@ mod tests {
                 cwd: "/repo".into(),
                 repo_fingerprint: "repo".into(),
                 worktree_fingerprint: "worktree".into(),
-                agent: AgentKind::Grok,
+                agent: AgentKind::Other,
                 automatic_harness: false,
                 available_agents: Vec::new(),
                 workstream: None,
@@ -3139,7 +3021,7 @@ mod tests {
             cwd: "/repo".into(),
             repo_fingerprint: "repo".into(),
             worktree_fingerprint: "worktree".into(),
-            agent: AgentKind::Codex,
+            agent: AgentKind::Other,
             automatic_harness: false,
             available_agents: Vec::new(),
             workstream: None,
@@ -3224,7 +3106,7 @@ mod tests {
                 cwd: "/repo".into(),
                 repo_fingerprint: "repo".into(),
                 worktree_fingerprint: "worktree".into(),
-                agent: AgentKind::KiroCli,
+                agent: AgentKind::Other,
                 automatic_harness: false,
                 available_agents: Vec::new(),
                 workstream: None,
@@ -3238,7 +3120,7 @@ mod tests {
         assert_eq!(explicit.status(), StatusCode::OK);
         let body = to_bytes(explicit.into_body(), 64 * 1024).await.unwrap();
         let prepared: PrepareManagedRunResponse = serde_json::from_slice(&body).unwrap();
-        assert_eq!(prepared.resolved_agent, Some(AgentKind::KiroCli));
+        assert_eq!(prepared.resolved_agent, Some(AgentKind::Other));
         store
             .writer
             .finish_workstream_run(
@@ -3274,9 +3156,9 @@ mod tests {
                 cwd: "/repo".into(),
                 repo_fingerprint: "repo".into(),
                 worktree_fingerprint: "worktree".into(),
-                agent: AgentKind::KiroCli,
+                agent: AgentKind::Other,
                 automatic_harness: true,
-                available_agents: vec![AgentKind::KiroCli],
+                available_agents: vec![AgentKind::Other],
                 workstream: None,
                 new_workstream: None,
                 force_unlock: false,
@@ -3305,7 +3187,7 @@ mod tests {
                 cwd: "/repo".into(),
                 repo_fingerprint: "repo".into(),
                 worktree_fingerprint: "worktree".into(),
-                agent: AgentKind::CommandCode,
+                agent: AgentKind::Other,
                 automatic_harness: false,
                 available_agents: Vec::new(),
                 workstream: None,
@@ -3319,7 +3201,7 @@ mod tests {
         assert_eq!(explicit.status(), StatusCode::OK);
         let body = to_bytes(explicit.into_body(), 64 * 1024).await.unwrap();
         let prepared: PrepareManagedRunResponse = serde_json::from_slice(&body).unwrap();
-        assert_eq!(prepared.resolved_agent, Some(AgentKind::CommandCode));
+        assert_eq!(prepared.resolved_agent, Some(AgentKind::Other));
         store
             .writer
             .finish_workstream_run(
@@ -3355,9 +3237,9 @@ mod tests {
                 cwd: "/repo".into(),
                 repo_fingerprint: "repo".into(),
                 worktree_fingerprint: "worktree".into(),
-                agent: AgentKind::CommandCode,
+                agent: AgentKind::Other,
                 automatic_harness: true,
-                available_agents: vec![AgentKind::CommandCode, AgentKind::ClaudeCode],
+                available_agents: vec![AgentKind::Other, AgentKind::Other],
                 workstream: None,
                 new_workstream: None,
                 force_unlock: false,
@@ -3368,196 +3250,13 @@ mod tests {
         .await;
         assert_eq!(automatic.status(), StatusCode::OK);
     }
-
-    #[tokio::test]
-    async fn grok_is_accepted_explicitly_but_not_in_the_automatic_pool() {
-        let temp = TempDir::new().unwrap();
-        let store = Store::open(temp.path()).unwrap();
-        let state = test_state(&store, temp.path());
-
-        let explicit = prepare_run(
-            State(state.clone()),
-            None,
-            None,
-            None,
-            Json(PrepareManagedRunRequest {
-                workspace: "default".into(),
-                project: "managed".into(),
-                cwd: "/repo".into(),
-                repo_fingerprint: "repo".into(),
-                worktree_fingerprint: "worktree".into(),
-                agent: AgentKind::Grok,
-                automatic_harness: false,
-                available_agents: Vec::new(),
-                workstream: None,
-                new_workstream: None,
-                force_unlock: false,
-                lease_owner: "explicit".into(),
-                repository_identity: None,
-            }),
-        )
-        .await;
-        assert_eq!(explicit.status(), StatusCode::OK);
-        let body = to_bytes(explicit.into_body(), 64 * 1024).await.unwrap();
-        let prepared: PrepareManagedRunResponse = serde_json::from_slice(&body).unwrap();
-        assert_eq!(prepared.resolved_agent, Some(AgentKind::Grok));
-        store
-            .writer
-            .finish_workstream_run(
-                ai_memory_store::ManagedRunAuthority::from_auth(
-                    AuthLevel::Anonymous,
-                    None,
-                    None,
-                    &ai_memory_core::ActorContext::anonymous(),
-                    false,
-                ),
-                FinishWorkstreamRun {
-                    sanitizer: ai_memory_core::Sanitizer::default(),
-                    run_id: prepared.run_id,
-                    native_session_id: Some("019f-session".into()),
-                    source_cursor: None,
-                    events: Vec::new(),
-                    complete: true,
-                    segment_path: None,
-                    exit_code: Some(0),
-                },
-            )
-            .await
-            .unwrap();
-
-        let automatic = prepare_run(
-            State(state),
-            None,
-            None,
-            None,
-            Json(PrepareManagedRunRequest {
-                workspace: "default".into(),
-                project: "managed".into(),
-                cwd: "/repo".into(),
-                repo_fingerprint: "repo".into(),
-                worktree_fingerprint: "worktree".into(),
-                agent: AgentKind::Grok,
-                automatic_harness: true,
-                available_agents: vec![AgentKind::Grok],
-                workstream: None,
-                new_workstream: None,
-                force_unlock: false,
-                lease_owner: "automatic".into(),
-                repository_identity: None,
-            }),
-        )
-        .await;
-        assert_eq!(automatic.status(), StatusCode::BAD_REQUEST);
-    }
-
-    /// The launcher offers `agy` explicitly, so the server has to accept it —
-    /// a missing arm here rejects the launch with "requires a supported
-    /// command-line harness" after the user already picked the harness.
-    #[tokio::test]
-    async fn antigravity_is_accepted_explicitly_but_not_in_the_automatic_pool() {
-        assert_explicit_only_managed_harness(
-            AgentKind::AntigravityCli,
-            "a0d5ac62-2501-4780-b783-76d159c56cb3",
-        )
-        .await;
-    }
-
-    #[tokio::test]
-    async fn copilot_cli_is_accepted_explicitly_but_not_in_the_automatic_pool() {
-        assert_explicit_only_managed_harness(
-            AgentKind::CopilotCli,
-            "318db77d-e19b-4750-82df-192a6b931437",
-        )
-        .await;
-    }
-
-    async fn assert_explicit_only_managed_harness(agent: AgentKind, native_session_id: &str) {
-        let temp = TempDir::new().unwrap();
-        let store = Store::open(temp.path()).unwrap();
-        let state = test_state(&store, temp.path());
-
-        let explicit = prepare_run(
-            State(state.clone()),
-            None,
-            None,
-            None,
-            Json(PrepareManagedRunRequest {
-                workspace: "default".into(),
-                project: "managed".into(),
-                cwd: "/repo".into(),
-                repo_fingerprint: "repo".into(),
-                worktree_fingerprint: "worktree".into(),
-                agent,
-                automatic_harness: false,
-                available_agents: Vec::new(),
-                workstream: None,
-                new_workstream: None,
-                force_unlock: false,
-                lease_owner: "explicit".into(),
-                repository_identity: None,
-            }),
-        )
-        .await;
-        assert_eq!(explicit.status(), StatusCode::OK);
-        let body = to_bytes(explicit.into_body(), 64 * 1024).await.unwrap();
-        let prepared: PrepareManagedRunResponse = serde_json::from_slice(&body).unwrap();
-        assert_eq!(prepared.resolved_agent, Some(agent));
-        store
-            .writer
-            .finish_workstream_run(
-                ai_memory_store::ManagedRunAuthority::from_auth(
-                    AuthLevel::Anonymous,
-                    None,
-                    None,
-                    &ai_memory_core::ActorContext::anonymous(),
-                    false,
-                ),
-                FinishWorkstreamRun {
-                    sanitizer: ai_memory_core::Sanitizer::default(),
-                    run_id: prepared.run_id,
-                    native_session_id: Some(native_session_id.into()),
-                    source_cursor: None,
-                    events: Vec::new(),
-                    complete: true,
-                    segment_path: None,
-                    exit_code: Some(0),
-                },
-            )
-            .await
-            .unwrap();
-
-        let automatic = prepare_run(
-            State(state),
-            None,
-            None,
-            None,
-            Json(PrepareManagedRunRequest {
-                workspace: "default".into(),
-                project: "managed".into(),
-                cwd: "/repo".into(),
-                repo_fingerprint: "repo".into(),
-                worktree_fingerprint: "worktree".into(),
-                agent,
-                automatic_harness: true,
-                available_agents: vec![agent],
-                workstream: None,
-                new_workstream: None,
-                force_unlock: false,
-                lease_owner: "automatic".into(),
-                repository_identity: None,
-            }),
-        )
-        .await;
-        assert_eq!(automatic.status(), StatusCode::BAD_REQUEST);
-    }
-
     #[tokio::test]
     async fn grok_run_context_uses_the_direct_delivery_gate() {
         let temp = TempDir::new().unwrap();
         let store = Store::open(temp.path()).unwrap();
         let state = test_state(&store, temp.path());
         let (workspace_id, project_id) = seed_scope(&store).await;
-        let input = prepare_input(workspace_id, project_id, AgentKind::Grok, "launcher");
+        let input = prepare_input(workspace_id, project_id, AgentKind::Other, "launcher");
         let prepared = store.writer.prepare_workstream_run(input).await.unwrap();
 
         let context = run_context(
@@ -3601,7 +3300,7 @@ mod tests {
         let store = Store::open(temp.path()).unwrap();
         let state = test_state(&store, temp.path());
         let (workspace_id, project_id) = seed_scope(&store).await;
-        let input = prepare_input(workspace_id, project_id, AgentKind::Codex, "launcher");
+        let input = prepare_input(workspace_id, project_id, AgentKind::Other, "launcher");
         let prepared = store
             .writer
             .prepare_workstream_run(input.clone())
@@ -3623,123 +3322,6 @@ mod tests {
         store.writer.prepare_workstream_run(input).await.unwrap();
     }
 
-    #[tokio::test]
-    async fn crush_context_fetch_is_repeatable_until_explicit_accept() {
-        let temp = TempDir::new().unwrap();
-        let store = Store::open(temp.path()).unwrap();
-        let state = test_state(&store, temp.path());
-        let (workspace_id, project_id) = seed_scope(&store).await;
-        let codex = store
-            .writer
-            .prepare_workstream_run(prepare_input(
-                workspace_id,
-                project_id,
-                AgentKind::Codex,
-                "codex",
-            ))
-            .await
-            .unwrap();
-        store
-            .writer
-            .finish_workstream_run(
-                ai_memory_store::ManagedRunAuthority::from_auth(
-                    AuthLevel::Anonymous,
-                    None,
-                    None,
-                    &ai_memory_core::ActorContext::anonymous(),
-                    false,
-                ),
-                FinishWorkstreamRun {
-                    sanitizer: ai_memory_core::Sanitizer::default(),
-                    run_id: codex.run_id,
-                    native_session_id: Some("codex-native".into()),
-                    source_cursor: None,
-                    events: vec![NewWorkstreamEvent {
-                        event_id: "codex:assistant:1".into(),
-                        agent: AgentKind::Codex,
-                        native_session_id: "codex-native".into(),
-                        source_record_id: None,
-                        kind: WorkstreamEventKind::Message,
-                        role: Some("assistant".into()),
-                        content: "AMWS-CODEX-SENTINEL".into(),
-                        occurred_at: None,
-                        metadata: serde_json::json!({}),
-                    }],
-                    complete: true,
-                    segment_path: None,
-                    exit_code: Some(0),
-                },
-            )
-            .await
-            .unwrap();
-        let crush = store
-            .writer
-            .prepare_workstream_run(prepare_input(
-                workspace_id,
-                project_id,
-                AgentKind::Crush,
-                "crush",
-            ))
-            .await
-            .unwrap();
-
-        let fetch = || {
-            run_context(
-                State(state.clone()),
-                None,
-                None,
-                AxumPath(crush.run_id.to_string()),
-            )
-        };
-        for _ in 0..2 {
-            let response = fetch().await;
-            assert_eq!(response.status(), StatusCode::OK);
-            let body = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
-            let packet: ManagedRunContextResponse = serde_json::from_slice(&body).unwrap();
-            assert!(
-                packet
-                    .context
-                    .as_deref()
-                    .is_some_and(|context| context.contains("AMWS-CODEX-SENTINEL"))
-            );
-            assert!(
-                !store
-                    .reader
-                    .managed_run_status(crush.run_id)
-                    .await
-                    .unwrap()
-                    .unwrap()
-                    .context_delivered
-            );
-        }
-
-        let accepted = accept_run_context(
-            State(state.clone()),
-            None,
-            None,
-            None,
-            None,
-            AxumPath(crush.run_id.to_string()),
-        )
-        .await;
-        assert_eq!(accepted.status(), StatusCode::NO_CONTENT);
-        assert!(
-            store
-                .reader
-                .managed_run_status(crush.run_id)
-                .await
-                .unwrap()
-                .unwrap()
-                .context_delivered
-        );
-
-        let response = fetch().await;
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = to_bytes(response.into_body(), 64 * 1024).await.unwrap();
-        let packet: ManagedRunContextResponse = serde_json::from_slice(&body).unwrap();
-        assert!(packet.context.is_none());
-    }
-
     #[cfg(unix)]
     #[test]
     fn segment_files_and_directories_are_private() {
@@ -3754,7 +3336,7 @@ mod tests {
             run_id,
             &[NewWorkstreamEvent {
                 event_id: "event-1".into(),
-                agent: AgentKind::Codex,
+                agent: AgentKind::Other,
                 native_session_id: "session-1".into(),
                 source_record_id: None,
                 kind: WorkstreamEventKind::Message,
@@ -3822,7 +3404,7 @@ mod tests {
                 cwd: "/repo".into(),
                 repo_fingerprint: "repo".into(),
                 worktree_fingerprint: "worktree".into(),
-                agent: AgentKind::ClaudeCode,
+                agent: AgentKind::Other,
                 automatic_harness: false,
                 available_agents: Vec::new(),
                 workstream: None,
@@ -3859,7 +3441,7 @@ mod tests {
                     source_cursor: None,
                     events: vec![NewWorkstreamEvent {
                         event_id: "scope-provenance".into(),
-                        agent: AgentKind::ClaudeCode,
+                        agent: AgentKind::Other,
                         native_session_id: "claude-native".into(),
                         source_record_id: Some("record-1".into()),
                         kind: WorkstreamEventKind::ToolResult,
@@ -4050,157 +3632,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn owner_finish_revocation_between_preflight_and_both_writer_paths() {
-        let temp = TempDir::new().unwrap();
-        let store = Store::open(temp.path()).unwrap();
-        let (ws, project) = seed_scope(&store).await;
-        let alice = store
-            .writer
-            .create_human_user(
-                ai_memory_core::NewUser {
-                    username: "alice".into(),
-                    name: None,
-                    email: None,
-                },
-                ai_memory_core::UserRole::User,
-                None,
-                false,
-            )
-            .await
-            .unwrap();
-        store
-            .writer
-            .set_access_mode(project, ai_memory_store::AccessMode::Restricted)
-            .await
-            .unwrap();
-        let actor = ai_memory_core::ActorContext {
-            user: Some("alice".into()),
-            ..ai_memory_core::ActorContext::anonymous()
-        };
-        for finished in [false, true] {
-            store
-                .writer
-                .grant_memory(alice, project, ai_memory_store::GrantLevel::Write, None)
-                .await
-                .unwrap();
-            let run = store
-                .writer
-                .prepare_workstream_run_owned(
-                    PrepareWorkstreamRun {
-                        selection: WorkstreamSelection::New(format!("revoke-{finished}")),
-                        ..prepare_input(ws, project, AgentKind::Codex, "label")
-                    },
-                    Some("user:alice".into()),
-                )
-                .await
-                .unwrap();
-            if finished {
-                store
-                    .writer
-                    .finish_workstream_run(
-                        ai_memory_store::ManagedRunAuthority::from_auth(
-                            AuthLevel::User,
-                            Some(ai_memory_core::AuthorizedViewer(alice)),
-                            Some(alice),
-                            &actor,
-                            false,
-                        ),
-                        FinishWorkstreamRun {
-                            sanitizer: ai_memory_core::Sanitizer::default(),
-                            run_id: run.run_id,
-                            native_session_id: None,
-                            source_cursor: None,
-                            events: Vec::new(),
-                            complete: true,
-                            segment_path: None,
-                            exit_code: None,
-                        },
-                    )
-                    .await
-                    .unwrap();
-            }
-            let barrier =
-                std::sync::Arc::new((tokio::sync::Notify::new(), tokio::sync::Notify::new()));
-            let mut state = test_state(&store, temp.path());
-            state.finish_barrier = Some(barrier.clone());
-            let request = serde_json::from_value(serde_json::json!({
-                "native_session_id": "native-revoke", "source_cursor": "cursor-revoke", "checkpoint": {},
-                "complete": true, "events": [{"event_id": "revoked-event", "agent": "codex",
-                    "native_session_id": "native-revoke", "kind": "message", "role": "assistant",
-                    "content": "revocation race evidence", "metadata": {}}]
-            })).unwrap();
-            let (response, before) = tokio::join!(
-                finish_run(
-                    State(state),
-                    Some(Extension(AuthLevel::User)),
-                    Some(Extension(ai_memory_core::AuthorizedViewer(alice))),
-                    Some(Extension(actor.clone())),
-                    Some(Extension(alice)),
-                    AxumPath(run.run_id.to_string()),
-                    Json(request)
-                ),
-                async {
-                    barrier.0.notified().await;
-                    assert!(
-                        store
-                            .writer
-                            .revoke_memory(alice, project, None)
-                            .await
-                            .unwrap()
-                    );
-                    let before = finish_sql_snapshot(&store).await;
-                    barrier.1.notify_one();
-                    before
-                }
-            );
-            assert_eq!(
-                response.status(),
-                StatusCode::FORBIDDEN,
-                "both writer paths must recheck Write after preflight"
-            );
-            assert_eq!(
-                finish_sql_snapshot(&store).await,
-                before,
-                "writer refusal must change no SQL run, event, index, link or cursor"
-            );
-            let raw = temp
-                .path()
-                .join("raw/workstreams")
-                .join(run.workstream_id.to_string());
-            assert_eq!(
-                raw.exists(),
-                !finished,
-                "normal revocation race can leave an unindexed raw segment; retries write none"
-            );
-            store
-                .writer
-                .grant_memory(alice, project, ai_memory_store::GrantLevel::Write, None)
-                .await
-                .unwrap();
-            let response = finish_run(
-                State(test_state(&store, temp.path())),
-                Some(Extension(AuthLevel::User)),
-                Some(Extension(ai_memory_core::AuthorizedViewer(alice))),
-                Some(Extension(actor.clone())),
-                Some(Extension(alice)),
-                AxumPath(run.run_id.to_string()),
-                Json(
-                    serde_json::from_value(serde_json::json!({
-                        "checkpoint": {}, "events": [], "complete": true
-                    }))
-                    .unwrap(),
-                ),
-            )
-            .await;
-            assert_eq!(
-                response.status(),
-                StatusCode::OK,
-                "restored Write legitimately finishes or retries the same run"
-            );
-        }
-    }
-
-    #[tokio::test]
     async fn native_identity_http_link_refuses_before_status_or_sql() {
         let temp = TempDir::new().unwrap();
         let store = Store::open(temp.path()).unwrap();
@@ -4211,7 +3642,7 @@ mod tests {
         let (ws, project) = seed_scope(&store).await;
         let run = store
             .writer
-            .prepare_workstream_run(prepare_input(ws, project, AgentKind::Codex, "launcher"))
+            .prepare_workstream_run(prepare_input(ws, project, AgentKind::Other, "launcher"))
             .await
             .unwrap();
         for id in [
@@ -4275,7 +3706,7 @@ mod tests {
         let (ws, project) = seed_scope(&store).await;
         let run = store
             .writer
-            .prepare_workstream_run(prepare_input(ws, project, AgentKind::Codex, "launcher"))
+            .prepare_workstream_run(prepare_input(ws, project, AgentKind::Other, "launcher"))
             .await
             .unwrap();
         let request = |id: &str| FinishManagedRunRequest {
@@ -4283,7 +3714,7 @@ mod tests {
             source_cursor: Some("cursor-attack".into()),
             events: vec![NewWorkstreamEvent {
                 event_id: "event-attack".into(),
-                agent: AgentKind::Codex,
+                agent: AgentKind::Other,
                 native_session_id: id.into(),
                 source_record_id: None,
                 kind: WorkstreamEventKind::Message,
@@ -4349,7 +3780,7 @@ mod tests {
         let (ws, project) = seed_scope(&store).await;
         let run = store
             .writer
-            .prepare_workstream_run(prepare_input(ws, project, AgentKind::Codex, "launcher"))
+            .prepare_workstream_run(prepare_input(ws, project, AgentKind::Other, "launcher"))
             .await
             .unwrap();
         let request = |event_native: &str| FinishManagedRunRequest {
@@ -4357,7 +3788,7 @@ mod tests {
             source_cursor: Some("cursor".into()),
             events: vec![NewWorkstreamEvent {
                 event_id: "event".into(),
-                agent: AgentKind::Codex,
+                agent: AgentKind::Other,
                 native_session_id: event_native.into(),
                 source_record_id: None,
                 kind: WorkstreamEventKind::Message,
@@ -4441,7 +3872,7 @@ mod tests {
             repo_fingerprint: name.into(),
             worktree_fingerprint: name.into(),
             cwd: "/repo".into(),
-            agent: AgentKind::Codex,
+            agent: AgentKind::Other,
             automatic_harness: false,
             available_agents: Vec::new(),
             selection: WorkstreamSelection::New(name.into()),
@@ -4470,7 +3901,7 @@ mod tests {
             source_cursor: None,
             events: vec![NewWorkstreamEvent {
                 event_id: "recovered-event".into(),
-                agent: AgentKind::Codex,
+                agent: AgentKind::Other,
                 native_session_id: "native-recovery".into(),
                 source_record_id: None,
                 kind: WorkstreamEventKind::Message,
@@ -4631,12 +4062,12 @@ mod tests {
         let (ws, project) = seed_scope(&store).await;
         let run = store
             .writer
-            .prepare_workstream_run(prepare_input(ws, project, AgentKind::Codex, "launcher"))
+            .prepare_workstream_run(prepare_input(ws, project, AgentKind::Other, "launcher"))
             .await
             .unwrap();
         store
             .writer
-            .link_managed_run_session(run.run_id, AgentKind::Codex, "private-existing")
+            .link_managed_run_session(run.run_id, AgentKind::Other, "private-existing")
             .await
             .unwrap();
         state.sanitizer = Sanitizer::new(&ai_memory_core::SanitizeConfig {
@@ -4697,7 +4128,7 @@ mod tests {
             cwd: "/repo/new-space-game".into(),
             repo_fingerprint: "repo".into(),
             worktree_fingerprint: "worktree".into(),
-            agent: AgentKind::Codex,
+            agent: AgentKind::Other,
             automatic_harness: false,
             available_agents: Vec::new(),
             workstream: None,

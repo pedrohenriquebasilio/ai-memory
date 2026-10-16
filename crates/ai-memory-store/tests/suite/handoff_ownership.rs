@@ -45,7 +45,7 @@ fn acceptance(
         handoff_id,
         workspace_id,
         project_id,
-        accepting_agent: AgentKind::ClaudeCode,
+        accepting_agent: AgentKind::Other,
         accepting_session: None,
         accepting_user,
         owner_filter,
@@ -67,7 +67,7 @@ fn handoff(
         // the shape that used to be project-wide AND top of the ranking, so it
         // is the one that leaked across operators.
         from_session_id: None,
-        from_agent: AgentKind::ClaudeCode,
+        from_agent: AgentKind::Other,
         to_agent: None,
         cwd: None,
         summary: summary.into(),
@@ -190,7 +190,7 @@ async fn ownership_writes_reject_malformed_identity_keys() {
                 id: invalid_session,
                 workspace_id: ws,
                 project_id: proj,
-                agent_kind: AgentKind::ClaudeCode,
+                agent_kind: AgentKind::Other,
                 cwd: None,
                 actor_user: Some("alice".into()),
             })
@@ -765,7 +765,7 @@ async fn automatic_supersession_does_not_reach_across_operators() {
                 id: session_id,
                 workspace_id: ws,
                 project_id: proj,
-                agent_kind: AgentKind::ClaudeCode,
+                agent_kind: AgentKind::Other,
                 cwd: Some("/repo".into()),
                 actor_user: stamp.clone(),
             })
@@ -777,7 +777,7 @@ async fn automatic_supersession_does_not_reach_across_operators() {
                 workspace_id: ws,
                 project_id: proj,
                 from_session_id: Some(session_id),
-                from_agent: AgentKind::ClaudeCode,
+                from_agent: AgentKind::Other,
                 to_agent: None,
                 cwd: Some("/repo".into()),
                 summary: summary.into(),
@@ -895,7 +895,7 @@ async fn open_session_lookup_is_owner_scoped() {
                 id,
                 workspace_id: ws,
                 project_id: proj,
-                agent_kind: AgentKind::ClaudeCode,
+                agent_kind: AgentKind::Other,
                 cwd: None,
                 actor_user: owner,
             })
@@ -913,7 +913,7 @@ async fn open_session_lookup_is_owner_scoped() {
     // Bob sees only the shared session — never Alice's live one.
     let bobs = ids(store
         .reader
-        .open_sessions_for_scope_agent(ws, proj, AgentKind::ClaudeCode, filter_for("bob"), None)
+        .open_sessions_for_scope_agent(ws, proj, AgentKind::Other, filter_for("bob"), None)
         .await
         .unwrap());
     assert_eq!(
@@ -925,7 +925,7 @@ async fn open_session_lookup_is_owner_scoped() {
     // Alice sees her own plus the shared one.
     let alices = ids(store
         .reader
-        .open_sessions_for_scope_agent(ws, proj, AgentKind::ClaudeCode, filter_for("alice"), None)
+        .open_sessions_for_scope_agent(ws, proj, AgentKind::Other, filter_for("alice"), None)
         .await
         .unwrap());
     assert!(alices.contains(&alice_session) && alices.contains(&shared_session));
@@ -933,7 +933,7 @@ async fn open_session_lookup_is_owner_scoped() {
     // The recovery switch (`all_owners=true` on /admin/open-sessions) sees all.
     let all = ids(store
         .reader
-        .open_sessions_for_scope_agent(ws, proj, AgentKind::ClaudeCode, OwnerFilter::Any, None)
+        .open_sessions_for_scope_agent(ws, proj, AgentKind::Other, OwnerFilter::Any, None)
         .await
         .unwrap());
     assert_eq!(all.len(), 2);
@@ -980,7 +980,7 @@ async fn a_session_start_claim_is_confirmed_only_to_its_own_live_session() {
         id,
         workspace_id: ws,
         project_id: proj,
-        agent_kind: AgentKind::ClaudeCode,
+        agent_kind: AgentKind::Other,
         cwd: None,
         actor_user: Some(operator("alice")),
     };

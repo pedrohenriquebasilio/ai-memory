@@ -427,7 +427,7 @@ mod tests {
                 id: session_id,
                 workspace_id,
                 project_id,
-                agent_kind: AgentKind::Codex,
+                agent_kind: AgentKind::Other,
                 cwd: None,
                 actor_user: None,
             })

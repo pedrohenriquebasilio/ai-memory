@@ -1408,7 +1408,7 @@ async fn should_drop_subagent(
     ) || body_is_subagent(&env.raw);
 
     if marked {
-        if env.agent != AgentKind::ClaudeCode {
+        if env.agent != AgentKind::Other {
             state.subagent_sessions.lock().await.insert(key);
         }
         return true;
@@ -3671,7 +3671,7 @@ async fn process_authorized(
     // the live session row to where it now runs, so its later SessionEnd and
     // sticky routing follow it; a child session moves like its root. Managed
     // runs are pinned to their own scope and never move.
-    let moved_from_cwd = (env.agent == AgentKind::OpenCode
+    let moved_from_cwd = (env.agent == AgentKind::Other
         && env.event == HookEvent::SessionStart
         && env.managed_run.is_none()
         && env
@@ -4152,7 +4152,7 @@ async fn process_authorized(
     // Substantive sessions synthesize the summary page and auto-handoff below.
     // OpenCode's service outlives its CLI: a completed root turn publishes a
     // continuation checkpoint without claiming the native session has ended.
-    let turn_checkpoint = env.agent == AgentKind::OpenCode
+    let turn_checkpoint = env.agent == AgentKind::Other
         && env.event == HookEvent::Stop
         && env
             .raw
@@ -4289,7 +4289,7 @@ async fn process_authorized(
         // `agent_id`; its end must not hand the next session a sub-task baton.
         // Other harnesses are not gated: Claude Code also sets `agent_type` on
         // a top-level `--agent` session, which still owns its baton.
-        let child_session = env.agent == AgentKind::OpenCode && body_is_subagent(&env.raw);
+        let child_session = env.agent == AgentKind::Other && body_is_subagent(&env.raw);
         // The opt-out covers both automatic batons: a session's end and an
         // OpenCode root-turn checkpoint, which is OpenCode's only baton since
         // a plugin unload no longer ends its sessions. The checkpoint still
@@ -5019,7 +5019,7 @@ pub(crate) mod tests {
             },
             origin: ai_memory_core::HandoffOrigin {
                 from_session_id: None,
-                from_agent: AgentKind::ClaudeCode,
+                from_agent: AgentKind::Other,
                 to_agent: None,
                 cwd: None,
                 owner_user: None,
@@ -5057,7 +5057,7 @@ pub(crate) mod tests {
         // claim a later handoff), the source agent, the age, and the accept
         // call to make.
         assert!(notice.contains(&id.to_string()));
-        assert!(notice.contains("claude-code") || notice.contains(AgentKind::ClaudeCode.as_str()));
+        assert!(notice.contains("claude-code") || notice.contains(AgentKind::Other.as_str()));
         assert!(notice.contains("1 hour ago"));
         assert!(notice.contains("memory_handoff_accept"));
         assert!(
@@ -5082,7 +5082,7 @@ pub(crate) mod tests {
                 .insert_message(ai_memory_core::NewAgentMessage {
                     from_workspace_id: state.workspace_id,
                     from_project_id: sender,
-                    from_agent: AgentKind::ClaudeCode,
+                    from_agent: AgentKind::Other,
                     from_session_id: None,
                     from_owner_user: None,
                     to_workspace_id: state.workspace_id,
@@ -5196,7 +5196,7 @@ pub(crate) mod tests {
                 ai_memory_core::MessageClaim {
                     workspace_id: state.workspace_id,
                     project_id: state.project_id,
-                    claiming_agent: AgentKind::ClaudeCode,
+                    claiming_agent: AgentKind::Other,
                     claiming_session: None,
                     claiming_user: None,
                 },
@@ -6611,7 +6611,7 @@ pub(crate) mod tests {
         let events = vec![WorkstreamEvent {
             sequence: 300,
             event_id: "tool-300".into(),
-            agent: AgentKind::Codex,
+            agent: AgentKind::Other,
             native_session_id: "native".into(),
             source_record_id: None,
             metadata: serde_json::Value::Null,
@@ -6639,28 +6639,6 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn managed_context_points_at_local_history_on_a_harness_switch() {
-        let previous = ai_memory_core::ManagedNativeSessionReference {
-            agent: AgentKind::ClaudeCode,
-            native_session_id: "native-stays-out-of-rendered-context".into(),
-        };
-        let rendered = render_managed_context(
-            &[],
-            "default",
-            ai_memory_core::WorkstreamId::new(),
-            0,
-            Some(&previous),
-        )
-        .unwrap();
-        assert!(rendered.contains("switches from claude-code"));
-        assert!(rendered.contains("AI_MEMORY_PREVIOUS_SESSION_HISTORY"));
-        assert!(rendered.contains("untrusted historical data"));
-        assert!(!rendered.contains(&previous.native_session_id));
-        assert_eq!(rendered.matches(UNTRUSTED_HISTORY_START).count(), 1);
-        assert_eq!(rendered.matches(UNTRUSTED_HISTORY_END).count(), 1);
-    }
-
-    #[test]
     fn automatic_memory_blocks_mark_dynamic_content_as_untrusted() {
         let handoff = Handoff {
             scope: ai_memory_core::HandoffScope {
@@ -6670,7 +6648,7 @@ pub(crate) mod tests {
             },
             origin: ai_memory_core::HandoffOrigin {
                 from_session_id: None,
-                from_agent: AgentKind::ClaudeCode,
+                from_agent: AgentKind::Other,
                 to_agent: None,
                 cwd: None,
                 owner_user: None,
@@ -7746,7 +7724,7 @@ pub(crate) mod tests {
             sid,
             ws,
             proj,
-            AgentKind::ClaudeCode,
+            AgentKind::Other,
             HookCheckpoint {
                 label: "test",
                 track_page_write: true,
@@ -7763,7 +7741,7 @@ pub(crate) mod tests {
             sid,
             ws,
             proj,
-            AgentKind::ClaudeCode,
+            AgentKind::Other,
             HookCheckpoint {
                 label: "test",
                 track_page_write: true,
@@ -9088,7 +9066,7 @@ pub(crate) mod tests {
         });
         let out = crate::assistant_capture::transform_for_client(
             &mut body,
-            ai_memory_core::AgentKind::ClaudeCode,
+            ai_memory_core::AgentKind::Other,
             HookEvent::Stop,
         );
         assert!(out.captured, "test fixture must produce a protocol");
@@ -9272,121 +9250,6 @@ pub(crate) mod tests {
             1,
             "top-level capture is persisted as usual"
         );
-    }
-
-    #[tokio::test]
-    async fn handle_hook_batch_keeps_top_level_claude_agent_sessions() {
-        for null_agent_id in [false, true] {
-            let tmp = TempDir::new().unwrap();
-            let state = Arc::new(make_state(&tmp).await);
-            let session = SessionId::new();
-            let child_session = SessionId::new();
-            let mut items = Vec::new();
-            for event in [
-                "session-start",
-                "user-prompt-submit",
-                "pre-tool-use",
-                "post-tool-use",
-                "stop",
-                "session-end",
-            ] {
-                let mut body = serde_json::json!({
-                    "session_id": session.to_string(),
-                    "prompt": "Review the patch for the main agent",
-                    "tool_name": "Bash",
-                    "tool_response": "Review complete",
-                });
-                // Keep the terminal tail unmarked to catch accidental seeding
-                // of the whole main session in subagent_sessions.
-                if !matches!(event, "stop" | "session-end") {
-                    body["agent_type"] = serde_json::json!("regulus:regulus");
-                    if null_agent_id {
-                        body["agent_id"] = serde_json::Value::Null;
-                    }
-                }
-                items.push(HookBatchItem {
-                    url: format!("http://h/hook?event={event}&agent=claude-code&drop_subagent=1"),
-                    body,
-                });
-            }
-            // OpenCode child sessions carry a parent ID as the subagent marker;
-            // both the marked event and its unmarked tail must still drop.
-            for body in [
-                serde_json::json!({
-                    "session_id": child_session.to_string(),
-                    "agent_type": "reviewer",
-                    "agent_id": session.to_string(),
-                    "tool_name": "Bash",
-                }),
-                serde_json::json!({
-                    "session_id": child_session.to_string(),
-                    "tool_name": "Bash",
-                }),
-            ] {
-                items.push(HookBatchItem {
-                    url: "http://h/hook?event=pre-tool-use&agent=opencode&drop_subagent=1".into(),
-                    body,
-                });
-            }
-            let response = handle_hook_batch(
-                State(state.clone()),
-                None,
-                None,
-                None,
-                HeaderMap::new(),
-                Json(items),
-            )
-            .await
-            .into_response();
-            assert_eq!(response.status(), StatusCode::OK);
-            let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
-                .await
-                .unwrap();
-            let ack: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-            assert_eq!(ack["accepted"], 8, "stored and dropped events are acked");
-
-            let metrics = state.ingest_metrics.snapshot();
-            assert_eq!(
-                metrics.accepted, 6,
-                "main session, null id: {null_agent_id}"
-            );
-            assert_eq!(metrics.dropped_by_policy, 2, "only the subagent is dropped");
-            assert_eq!(
-                state
-                    .reader
-                    .observations_for_session(session)
-                    .await
-                    .unwrap()
-                    .len(),
-                6,
-            );
-            assert!(
-                state
-                    .reader
-                    .observations_for_session(child_session)
-                    .await
-                    .unwrap()
-                    .is_empty()
-            );
-            let pages = session_pages(&state).await;
-            assert_eq!(pages.len(), 1, "the main session gets its durable summary");
-            assert!(
-                state
-                    .wiki
-                    .read_page(
-                        state.workspace_id,
-                        state.project_id,
-                        &ai_memory_core::PagePath::new(pages[0].clone()).unwrap(),
-                    )
-                    .unwrap()
-                    .body
-                    .contains("Review the patch for the main agent")
-            );
-            assert!(
-                open_handoff_exists(&state).await,
-                "the main session keeps its baton"
-            );
-        }
     }
 
     /// Claude Code reports a Task subagent under the parent's `session_id`,
@@ -9597,236 +9460,6 @@ pub(crate) mod tests {
                 .len(),
             1,
             "without the per-project opt-in, subagent captures are stored (default behavior)"
-        );
-    }
-
-    #[tokio::test]
-    async fn drop_subagent_captures_drops_unmarked_tail_of_tracked_session() {
-        let tmp = TempDir::new().unwrap();
-        let state = Arc::new(make_state(&tmp).await);
-
-        // (1) marked subagent event seeds session "sub" (and is dropped);
-        // (2) a later UNMARKED event on "sub" is the tail → dropped via tracking;
-        // (3) an UNMARKED event on a never-seeded session "top" → kept.
-        let marked = serde_json::json!({
-            "sessionId": "sub", "subagentType": "general-purpose", "toolName": "x"
-        });
-        let tail = serde_json::json!({ "sessionId": "sub", "toolName": "y" });
-        let top = serde_json::json!({ "sessionId": "top", "toolName": "z" });
-        let items = vec![
-            HookBatchItem {
-                url: "http://h/hook?event=pre-tool-use&agent=grok&drop_subagent=1".into(),
-                body: marked,
-            },
-            HookBatchItem {
-                url: "http://h/hook?event=pre-tool-use&agent=grok&drop_subagent=1".into(),
-                body: tail.clone(),
-            },
-            HookBatchItem {
-                url: "http://h/hook?event=pre-tool-use&agent=grok&drop_subagent=1".into(),
-                body: top.clone(),
-            },
-        ];
-
-        let response = handle_hook_batch(
-            State(state.clone()),
-            None,
-            None,
-            None,
-            HeaderMap::new(),
-            Json(items),
-        )
-        .await
-        .into_response();
-        assert_eq!(response.status(), StatusCode::OK);
-        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
-            .await
-            .unwrap();
-        let ack: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-        assert_eq!(ack["accepted"], 3, "all acked: 2 dropped + 1 processed");
-
-        let sub_sid =
-            resolve_session_id(&HookEnvelope::from_query_and_body(grok_tool_query(), tail))
-                .unwrap();
-        let top_sid =
-            resolve_session_id(&HookEnvelope::from_query_and_body(grok_tool_query(), top)).unwrap();
-        assert!(
-            state
-                .reader
-                .observations_for_session(sub_sid)
-                .await
-                .unwrap()
-                .is_empty(),
-            "the unmarked tail of a tracked subagent session is dropped"
-        );
-        assert_eq!(
-            state
-                .reader
-                .observations_for_session(top_sid)
-                .await
-                .unwrap()
-                .len(),
-            1,
-            "an unmarked event on a non-subagent session is kept"
-        );
-    }
-
-    #[tokio::test]
-    async fn subagent_start_event_seeds_the_session_so_its_tail_drops() {
-        let tmp = TempDir::new().unwrap();
-        let state = Arc::new(make_state(&tmp).await);
-
-        // SubagentStart seeds session "ss" BEFORE its first content event, so even
-        // the leading unmarked user_prompt_submit is dropped.
-        let start = serde_json::json!({ "sessionId": "ss" });
-        let lead = serde_json::json!({ "sessionId": "ss", "prompt": "go" });
-        let items = vec![
-            HookBatchItem {
-                url: "http://h/hook?event=subagent-start&agent=grok&drop_subagent=1".into(),
-                body: start,
-            },
-            HookBatchItem {
-                url: "http://h/hook?event=user-prompt-submit&agent=grok&drop_subagent=1".into(),
-                body: lead.clone(),
-            },
-        ];
-
-        let response = handle_hook_batch(
-            State(state.clone()),
-            None,
-            None,
-            None,
-            HeaderMap::new(),
-            Json(items),
-        )
-        .await
-        .into_response();
-        assert_eq!(response.status(), StatusCode::OK);
-
-        let sid = resolve_session_id(&HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "user-prompt-submit".into(),
-                agent: Some("grok".into()),
-                ..Default::default()
-            },
-            lead,
-        ))
-        .unwrap();
-        assert!(
-            state
-                .reader
-                .observations_for_session(sid)
-                .await
-                .unwrap()
-                .is_empty(),
-            "SubagentStart seeds the session so the leading unmarked event drops too"
-        );
-    }
-
-    #[tokio::test]
-    async fn drop_subagent_tracking_is_scoped_by_project() {
-        let tmp = TempDir::new().unwrap();
-        let state = make_state(&tmp).await;
-
-        let marked_project_a = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "pre-tool-use".into(),
-                agent: Some("grok".into()),
-                project: Some("project-a".into()),
-                drop_subagent: Some("1".into()),
-                ..Default::default()
-            },
-            serde_json::json!({
-                "sessionId": "shared-session", "subagentType": "general-purpose"
-            }),
-        );
-        assert!(should_drop_subagent(&state, &marked_project_a, None).await);
-        assert!(
-            state.active_project.get().is_none(),
-            "drop preflight may resolve scope but must not publish it as active"
-        );
-
-        let unmarked_project_b = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "pre-tool-use".into(),
-                agent: Some("grok".into()),
-                project: Some("project-b".into()),
-                drop_subagent: Some("1".into()),
-                ..Default::default()
-            },
-            serde_json::json!({ "sessionId": "shared-session", "toolName": "kept" }),
-        );
-        assert!(
-            !should_drop_subagent(&state, &unmarked_project_b, None).await,
-            "a subagent session tracked in project-a must not drop same-id events in project-b"
-        );
-
-        let unmarked_project_a = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "pre-tool-use".into(),
-                agent: Some("grok".into()),
-                project: Some("project-a".into()),
-                drop_subagent: Some("1".into()),
-                ..Default::default()
-            },
-            serde_json::json!({ "sessionId": "shared-session", "toolName": "dropped" }),
-        );
-        assert!(
-            should_drop_subagent(&state, &unmarked_project_a, None).await,
-            "the originally tracked project's unmarked tail still drops"
-        );
-    }
-
-    #[tokio::test]
-    async fn subagent_stop_keeps_session_tracked_until_session_end_tail_drops() {
-        let tmp = TempDir::new().unwrap();
-        let state = make_state(&tmp).await;
-
-        let query = |event: &str| HookQuery {
-            event: event.into(),
-            agent: Some("grok".into()),
-            project: Some("tail-project".into()),
-            drop_subagent: Some("1".into()),
-            ..Default::default()
-        };
-
-        let start = HookEnvelope::from_query_and_body(
-            query("subagent-start"),
-            serde_json::json!({ "sessionId": "tail-session" }),
-        );
-        assert!(should_drop_subagent(&state, &start, None).await);
-
-        let subagent_stop = HookEnvelope::from_query_and_body(
-            query("subagent-stop"),
-            serde_json::json!({ "sessionId": "tail-session" }),
-        );
-        assert!(should_drop_subagent(&state, &subagent_stop, None).await);
-
-        let unmarked_stop_tail = HookEnvelope::from_query_and_body(
-            query("stop"),
-            serde_json::json!({ "sessionId": "tail-session" }),
-        );
-        assert!(
-            should_drop_subagent(&state, &unmarked_stop_tail, None).await,
-            "SubagentStop must not clear tracking before the unmarked stop tail"
-        );
-
-        let session_end_tail = HookEnvelope::from_query_and_body(
-            query("session-end"),
-            serde_json::json!({ "sessionId": "tail-session" }),
-        );
-        assert!(
-            should_drop_subagent(&state, &session_end_tail, None).await,
-            "SessionEnd tail is dropped and then clears tracking"
-        );
-
-        let after_session_end = HookEnvelope::from_query_and_body(
-            query("pre-tool-use"),
-            serde_json::json!({ "sessionId": "tail-session", "toolName": "kept" }),
-        );
-        assert!(
-            !should_drop_subagent(&state, &after_session_end, None).await,
-            "SessionEnd clears tracking for that scoped session"
         );
     }
 
@@ -11237,7 +10870,7 @@ pub(crate) mod tests {
                     repo_fingerprint: "link-repo".into(),
                     worktree_fingerprint: "link-worktree".into(),
                     cwd: "/tmp/scratch".into(),
-                    agent: AgentKind::ClaudeCode,
+                    agent: AgentKind::Other,
                     automatic_harness: false,
                     available_agents: Vec::new(),
                     selection: WorkstreamSelection::Current,
@@ -11372,7 +11005,7 @@ pub(crate) mod tests {
                 repo_fingerprint: "collision-repo".into(),
                 worktree_fingerprint: "collision-worktree".into(),
                 cwd: "/tmp/scratch".into(),
-                agent: AgentKind::ClaudeCode,
+                agent: AgentKind::Other,
                 automatic_harness: false,
                 available_agents: Vec::new(),
                 selection: WorkstreamSelection::Current,
@@ -12693,7 +12326,7 @@ pub(crate) mod tests {
                         session,
                         state.workspace_id,
                         state.project_id,
-                        AgentKind::OpenCode
+                        AgentKind::Other
                     )
                     .await
                     .unwrap(),
@@ -12742,41 +12375,6 @@ pub(crate) mod tests {
                 .unwrap(),
             Some(session)
         );
-    }
-
-    #[tokio::test]
-    async fn opencode_turn_checkpoint_requires_root_substantive_unmanaged_marked_stop() {
-        for case in [
-            "noop",
-            "subagent",
-            "managed",
-            "unmarked",
-            "wrong-agent",
-            "wrong-type",
-        ] {
-            let tmp = TempDir::new().unwrap();
-            let state = make_state(&tmp).await;
-            let session = SessionId::new().to_string();
-            if case != "noop" {
-                let mut prompt = opencode_turn_event(&session, "user-prompt", "Real work");
-                if case == "wrong-agent" {
-                    prompt.agent = AgentKind::Codex;
-                }
-                process(&state, prompt, None, Vec::new()).await.unwrap();
-            }
-            let mut stop = opencode_turn_event(&session, "stop", "Completed work");
-            match case {
-                "subagent" => stop.raw["agent_id"] = serde_json::json!("child"),
-                "managed" => stop.managed_run = Some(ManagedRunId::new().to_string()),
-                "unmarked" => stop.raw["turn_checkpoint"] = serde_json::json!(false),
-                "wrong-type" => stop.raw["turn_checkpoint"] = serde_json::json!("true"),
-                "wrong-agent" => stop.agent = AgentKind::Codex,
-                _ => {}
-            }
-            process(&state, stop, None, Vec::new()).await.unwrap();
-            assert!(session_pages(&state).await.is_empty(), "{case}");
-            assert!(!open_handoff_exists(&state).await, "{case}");
-        }
     }
 
     #[tokio::test]
@@ -13289,9 +12887,9 @@ pub(crate) mod tests {
         let other_project_sid = SessionId::new();
         let other_agent_sid = SessionId::new();
         for (id, project_id, agent) in [
-            (target_sid, target, AgentKind::Codex),
-            (other_project_sid, other, AgentKind::Codex),
-            (other_agent_sid, target, AgentKind::ClaudeCode),
+            (target_sid, target, AgentKind::Other),
+            (other_project_sid, other, AgentKind::Other),
+            (other_agent_sid, target, AgentKind::Other),
         ] {
             state
                 .writer
@@ -13335,7 +12933,7 @@ pub(crate) mod tests {
                 .open_sessions_for_scope_agent(
                     state.workspace_id,
                     other,
-                    AgentKind::Codex,
+                    AgentKind::Other,
                     ai_memory_core::OwnerFilter::Any,
                     None
                 )
@@ -13351,7 +12949,7 @@ pub(crate) mod tests {
                 .open_sessions_for_scope_agent(
                     state.workspace_id,
                     target,
-                    AgentKind::ClaudeCode,
+                    AgentKind::Other,
                     ai_memory_core::OwnerFilter::Any,
                     None
                 )
@@ -13391,8 +12989,8 @@ pub(crate) mod tests {
         let wrong_project_sid = SessionId::new();
         let wrong_agent_sid = SessionId::new();
         for (id, project_id, agent) in [
-            (wrong_project_sid, other, AgentKind::Codex),
-            (wrong_agent_sid, target, AgentKind::ClaudeCode),
+            (wrong_project_sid, other, AgentKind::Other),
+            (wrong_agent_sid, target, AgentKind::Other),
         ] {
             state
                 .writer
@@ -13581,7 +13179,7 @@ pub(crate) mod tests {
                 session,
                 state.workspace_id,
                 state.project_id,
-                AgentKind::ClaudeCode,
+                AgentKind::Other,
             )
             .await
             .unwrap();
@@ -13736,7 +13334,7 @@ pub(crate) mod tests {
                 workspace_id: state.workspace_id,
                 project_id: state.project_id,
                 from_session_id: None,
-                from_agent: AgentKind::ClaudeCode,
+                from_agent: AgentKind::Other,
                 to_agent: None,
                 cwd: None,
                 summary: "SUB-OWNED-MARKER".to_string(),
@@ -14338,7 +13936,7 @@ pub(crate) mod tests {
                 workspace_id: state.workspace_id,
                 project_id: state.project_id,
                 from_session_id: None,
-                from_agent: AgentKind::ClaudeCode,
+                from_agent: AgentKind::Other,
                 to_agent: None,
                 cwd: None,
                 summary: "HANDOFF-MARKER".to_string(),
@@ -14457,7 +14055,7 @@ pub(crate) mod tests {
                 workspace_id: state.workspace_id,
                 project_id: state.project_id,
                 from_session_id: None,
-                from_agent: AgentKind::ClaudeCode,
+                from_agent: AgentKind::Other,
                 to_agent: None,
                 cwd: None,
                 summary: "HANDOFF-MARKER".to_string(),
@@ -14551,7 +14149,7 @@ pub(crate) mod tests {
                 workspace_id: state.workspace_id,
                 project_id: state.project_id,
                 from_session_id: None,
-                from_agent: AgentKind::ClaudeCode,
+                from_agent: AgentKind::Other,
                 to_agent: None,
                 cwd: None,
                 summary: "HANDOFF-MARKER".to_string(),
@@ -14633,7 +14231,7 @@ pub(crate) mod tests {
                 handoff_id,
                 workspace_id: state.workspace_id,
                 project_id: state.project_id,
-                accepting_agent: AgentKind::Codex,
+                accepting_agent: AgentKind::Other,
                 accepting_session: None,
                 accepting_user: None,
                 owner_filter: ai_memory_core::OwnerFilter::Unattributed,
@@ -14743,7 +14341,7 @@ pub(crate) mod tests {
                 workspace_id: state.workspace_id,
                 project_id: state.project_id,
                 from_session_id: None,
-                from_agent: AgentKind::ClaudeCode,
+                from_agent: AgentKind::Other,
                 to_agent: None,
                 cwd: None,
                 summary: "HANDOFF-MARKER".to_string(),
@@ -14998,7 +14596,7 @@ pub(crate) mod tests {
                 id: sid,
                 workspace_id: state.workspace_id,
                 project_id: target,
-                agent_kind: AgentKind::Codex,
+                agent_kind: AgentKind::Other,
                 cwd: Some(std::path::PathBuf::from("/tmp/target")),
                 actor_user: None,
             })
@@ -15330,7 +14928,7 @@ pub(crate) mod tests {
             workspace_id,
             project_id,
             session_id,
-            AgentKind::Codex,
+            AgentKind::Other,
             &observations,
         );
         let page_id = state
@@ -15354,7 +14952,7 @@ pub(crate) mod tests {
         let handoff = build_auto_handoff(
             workspace_id,
             project_id,
-            AgentKind::Codex,
+            AgentKind::Other,
             session_id,
             None,
             &observations,
@@ -15492,7 +15090,7 @@ pub(crate) mod tests {
                 session_id,
                 state.workspace_id,
                 state.project_id,
-                AgentKind::ClaudeCode,
+                AgentKind::Other,
             )
             .await
             .unwrap();
@@ -15525,7 +15123,7 @@ pub(crate) mod tests {
                 session_id,
                 state.workspace_id,
                 state.project_id,
-                AgentKind::ClaudeCode,
+                AgentKind::Other,
             )
             .await
             .unwrap();
@@ -15576,7 +15174,7 @@ pub(crate) mod tests {
                 session_id,
                 state.workspace_id,
                 state.project_id,
-                AgentKind::ClaudeCode,
+                AgentKind::Other,
             )
             .await
             .unwrap();
@@ -15757,7 +15355,7 @@ pub(crate) mod tests {
                 workspace_id: ws,
                 project_id: proj,
                 from_session_id: None,
-                from_agent: AgentKind::ClaudeCode,
+                from_agent: AgentKind::Other,
                 to_agent: None,
                 cwd: Some(std::path::PathBuf::from(cwd)),
                 summary: "handoff summary".to_string(),
@@ -15821,7 +15419,7 @@ pub(crate) mod tests {
                     id: session_id,
                     workspace_id: state.workspace_id,
                     project_id: state.project_id,
-                    agent_kind: AgentKind::ClaudeCode,
+                    agent_kind: AgentKind::Other,
                     cwd: Some(cwd.into()),
                     actor_user: None,
                 })
@@ -15833,7 +15431,7 @@ pub(crate) mod tests {
                     workspace_id: state.workspace_id,
                     project_id: state.project_id,
                     from_session_id: Some(session_id),
-                    from_agent: AgentKind::ClaudeCode,
+                    from_agent: AgentKind::Other,
                     to_agent: None,
                     cwd: Some(cwd.into()),
                     summary: summary.into(),
@@ -15918,7 +15516,7 @@ pub(crate) mod tests {
                 workspace_id: state.workspace_id,
                 project_id: state.project_id,
                 from_session_id: None,
-                from_agent: AgentKind::ClaudeCode,
+                from_agent: AgentKind::Other,
                 to_agent: None,
                 cwd: None,
                 summary: "REAL-WORK-MARKER".into(),
@@ -16018,7 +15616,7 @@ pub(crate) mod tests {
             repo_fingerprint: "repo".into(),
             worktree_fingerprint: "worktree".into(),
             cwd: cwd.clone(),
-            agent: AgentKind::Codex,
+            agent: AgentKind::Other,
             automatic_harness: false,
             available_agents: Vec::new(),
             selection: WorkstreamSelection::Current,
@@ -16047,7 +15645,7 @@ pub(crate) mod tests {
                     source_cursor: Some("cursor-1".into()),
                     events: vec![NewWorkstreamEvent {
                         event_id: "event-1".into(),
-                        agent: AgentKind::Codex,
+                        agent: AgentKind::Other,
                         native_session_id: "native-1".into(),
                         source_record_id: Some("record-1".into()),
                         kind: WorkstreamEventKind::Message,
@@ -16072,7 +15670,7 @@ pub(crate) mod tests {
                 workspace_id: state.workspace_id,
                 project_id: state.project_id,
                 from_session_id: None,
-                from_agent: AgentKind::ClaudeCode,
+                from_agent: AgentKind::Other,
                 to_agent: None,
                 cwd: None,
                 summary: "HANDOFF-MARKER".to_string(),
@@ -16416,7 +16014,7 @@ pub(crate) mod tests {
                 workspace_id: ws,
                 project_id: proj,
                 from_session_id: None,
-                from_agent: AgentKind::ClaudeCode,
+                from_agent: AgentKind::Other,
                 to_agent: None,
                 cwd: Some(std::path::PathBuf::from(cwd)),
                 summary: "resume the auth refactor".to_string(),
@@ -16464,7 +16062,7 @@ pub(crate) mod tests {
                 repo_fingerprint: "repo".into(),
                 worktree_fingerprint: "worktree".into(),
                 cwd: "/repo".into(),
-                agent: AgentKind::ClaudeCode,
+                agent: AgentKind::Other,
                 automatic_harness: false,
                 available_agents: Vec::new(),
                 selection: WorkstreamSelection::Current,
@@ -16489,7 +16087,7 @@ pub(crate) mod tests {
                     source_cursor: None,
                     events: vec![ai_memory_core::NewWorkstreamEvent {
                         event_id: "managed-event-1".into(),
-                        agent: AgentKind::ClaudeCode,
+                        agent: AgentKind::Other,
                         native_session_id: "claude-session".into(),
                         source_record_id: Some("record-1".into()),
                         kind: WorkstreamEventKind::Message,
@@ -16514,7 +16112,7 @@ pub(crate) mod tests {
                 repo_fingerprint: "repo".into(),
                 worktree_fingerprint: "worktree".into(),
                 cwd: "/repo".into(),
-                agent: AgentKind::KimiCode,
+                agent: AgentKind::Other,
                 automatic_harness: false,
                 available_agents: Vec::new(),
                 selection: WorkstreamSelection::Current,
@@ -17284,7 +16882,7 @@ pub(crate) mod tests {
                 workspace_id: ws,
                 project_id: proj,
                 from_session_id: None,
-                from_agent: AgentKind::ClaudeCode,
+                from_agent: AgentKind::Other,
                 to_agent: None,
                 cwd: Some(std::path::PathBuf::from(cwd)),
                 summary: "handoff summary".to_string(),
@@ -18237,136 +17835,6 @@ pub(crate) mod tests {
         assert_eq!(inspect_capture_envelope(env).unwrap().raw, raw);
     }
 
-    #[tokio::test]
-    async fn codex_native_tools_are_sanitized_scoped_and_idempotent_until_session_end() {
-        let tmp = TempDir::new().unwrap();
-        let mut state = make_state(&tmp).await;
-        state.sanitizer = Sanitizer::new(&SanitizeConfig {
-            extra_patterns: vec!["PRIVATE_CONTENT".into()],
-            allowlist: Vec::new(),
-        })
-        .unwrap();
-        let mut projects = Vec::new();
-        for project in ["codex-a", "codex-b"] {
-            let sid = SessionId::new();
-            let envelope = |event: &str| {
-                HookEnvelope::from_query_and_body(
-                    HookQuery {
-                        event: event.into(),
-                        agent: Some("codex".into()),
-                        workspace: Some("default".into()),
-                        project: Some(project.into()),
-                        ingest_key: Some(format!("native-{event}")),
-                        ..Default::default()
-                    },
-                    serde_json::json!({
-                        "session_id": sid.to_string(), "cwd": "/repo", "turn_id": "turn-1",
-                        "hook_event_name": event, "tool_name": "Bash",
-                        "tool_use_id": "call-native-1", "tool_input": {"command": "PRIVATE_INPUT"},
-                        "tool_response": {"content": [{"type": "text", "text": format!("{project}: PRIVATE_CONTENT")} ]},
-                    }),
-                )
-            };
-            for event in [
-                "SessionStart",
-                "PreToolUse",
-                "PostToolUse",
-                "PreToolUse",
-                "PostToolUse",
-                "Stop",
-            ] {
-                process(&state, envelope(event), None, Vec::new())
-                    .await
-                    .unwrap();
-            }
-            let (ws, proj) = state
-                .reader
-                .session_project_ids(sid)
-                .await
-                .unwrap()
-                .unwrap();
-            assert!(
-                !projects.contains(&proj),
-                "the same ingest keys must work in both projects"
-            );
-            projects.push(proj);
-            let observations = state.reader.observations_for_session(sid).await.unwrap();
-            assert_eq!(
-                observations.len(),
-                4,
-                "tool retries must not append observations"
-            );
-            assert!(
-                observations
-                    .iter()
-                    .all(|o| o.workspace_id == ws && o.project_id == proj)
-            );
-            assert!(observations.iter().all(|o| !o.body.contains("PRIVATE_")));
-            let pre = observations
-                .iter()
-                .find(|o| o.kind == ObservationKind::PreToolUse)
-                .unwrap();
-            assert_eq!(
-                pre.body,
-                "tool_family: non-file\ntool_call_id: call-native-1"
-            );
-            let post = observations
-                .iter()
-                .find(|o| o.kind == ObservationKind::PostToolUse)
-                .unwrap();
-            assert_eq!(
-                post.body,
-                format!(
-                    "tool_family: non-file\ntool_call_id: call-native-1\noutcome: unknown\n---\n{project}: [REDACTED:custom]"
-                )
-            );
-            assert!(
-                state
-                    .reader
-                    .open_session_for_scope_agent_by_id(
-                        ws,
-                        proj,
-                        AgentKind::Codex,
-                        ai_memory_core::OwnerFilter::Any,
-                        sid,
-                        false
-                    )
-                    .await
-                    .unwrap()
-                    .is_some(),
-                "Stop must leave the Codex session open"
-            );
-            assert!(
-                state
-                    .reader
-                    .latest_open_handoff(ws, proj, None, ai_memory_core::OwnerFilter::Any)
-                    .await
-                    .unwrap()
-                    .is_none()
-            );
-
-            process(&state, envelope("SessionEnd"), None, Vec::new())
-                .await
-                .unwrap();
-            assert_eq!(
-                state
-                    .reader
-                    .session_end_disposition(sid, ws, proj, AgentKind::Codex)
-                    .await
-                    .unwrap(),
-                ai_memory_store::SessionEndDisposition::AlreadyEnded
-            );
-            assert!(
-                state
-                    .reader
-                    .latest_open_handoff(ws, proj, None, ai_memory_core::OwnerFilter::Any)
-                    .await
-                    .unwrap()
-                    .is_some()
-            );
-        }
-    }
-
     /// Regression for #980: a secret straddling the old 80-char `title_hint`
     /// cutoff survived in `observations.title` unredacted, because
     /// `payload::truncate_for_title` used to cut the prompt to 80 chars
@@ -18521,128 +17989,6 @@ pub(crate) mod tests {
             crate::payload::POST_COMPACTION_EXCERPT_MAX_BYTES,
         )
         .await;
-    }
-
-    /// The tool excerpt surface: the cap runs on the whole durable body
-    /// (`tool: …\n---\n…`), so the padding lands inside the tool result.
-    #[tokio::test]
-    async fn issue_1114_tool_body_is_sanitized_before_the_2kb_cap() {
-        let tmp = TempDir::new().unwrap();
-        let mut state = make_state(&tmp).await;
-        state.sanitizer = Sanitizer::new(&SanitizeConfig {
-            extra_patterns: vec![r"SECRET[0-9A-Za-z]{20,}".into()],
-            allowlist: Vec::new(),
-        })
-        .unwrap();
-        let secret = format!("SECRET{}", "Z".repeat(30));
-        let sid = SessionId::new();
-        let env = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "PostToolUse".into(),
-                agent: Some("claude-code".into()),
-                ..Default::default()
-            },
-            serde_json::json!({
-                "session_id": sid.to_string(),
-                "cwd": "/repo",
-                "tool_name": "Read",
-                "tool_use_id": "call-1114",
-                "tool_response": format!("{} {secret}", "x".repeat(1_920)),
-            }),
-        );
-        process(&state, env, None, Vec::new()).await.unwrap();
-
-        let observations = state.reader.observations_for_session(sid).await.unwrap();
-        let body = observations
-            .iter()
-            .find(|o| o.kind == ObservationKind::PostToolUse)
-            .expect("post-tool-use observation was recorded")
-            .body
-            .clone();
-        assert!(
-            !body.contains(&secret) && !body.contains("SECRETZ"),
-            "unredacted secret fragment survived the cap: {body:?}"
-        );
-        assert!(body.contains("REDACT"), "no redaction marker: {body:?}");
-        assert!(
-            body.len() <= crate::payload::TOOL_EXCERPT_MAX_BYTES,
-            "body exceeded the 2 KB cap: {body:?}"
-        );
-    }
-
-    /// The per-event caps keep splitting on UTF-8 boundaries through the
-    /// funnel (`truncate_utf8_bytes`), so a multibyte tool result is capped
-    /// without producing invalid bytes.
-    #[tokio::test]
-    async fn tool_body_cap_keeps_the_utf8_boundary() {
-        let tmp = TempDir::new().unwrap();
-        let state = make_state(&tmp).await;
-        let sid = SessionId::new();
-        let env = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "PostToolUse".into(),
-                agent: Some("claude-code".into()),
-                ..Default::default()
-            },
-            serde_json::json!({
-                "session_id": sid.to_string(),
-                "cwd": "/repo",
-                "tool_name": "Read",
-                "tool_use_id": "call-utf8",
-                "tool_response": "é".repeat(2_000), // 2 bytes each: 2x the cap
-            }),
-        );
-        process(&state, env, None, Vec::new()).await.unwrap();
-
-        let observations = state.reader.observations_for_session(sid).await.unwrap();
-        let body = observations
-            .iter()
-            .find(|o| o.kind == ObservationKind::PostToolUse)
-            .expect("post-tool-use observation was recorded")
-            .body
-            .clone();
-        assert!(body.contains('é'));
-        assert!(
-            body.len() <= crate::payload::TOOL_EXCERPT_MAX_BYTES,
-            "body exceeded the 2 KB cap: {body:?}"
-        );
-        assert!(body.ends_with('…'));
-    }
-
-    #[test]
-    fn codex_native_patch_capture_backstop_discards_unproven_output() {
-        for protocol in [
-            capture_protocol("keep", "active", "file", 1, "extracted"),
-            serde_json::json!({"version": 99}),
-        ] {
-            let env = HookEnvelope::from_query_and_body(
-                HookQuery {
-                    event: "PostToolUse".into(),
-                    agent: Some("codex".into()),
-                    ..Default::default()
-                },
-                serde_json::json!({
-                    "session_id": "native-codex", "cwd": "/repo", "tool_name": "apply_patch",
-                    "tool_input": {"command": "*** Begin Patch\n*** Add File: secret/private.txt\n+PRIVATE_CONTENT\n*** End Patch"},
-                    "tool_use_id": "call-patch", "tool_response": "PRIVATE_CONTENT",
-                    "_ai_memory_capture": protocol,
-                }),
-            );
-            assert!(
-                env.body_excerpt
-                    .as_ref()
-                    .unwrap()
-                    .contains("PRIVATE_CONTENT")
-            );
-            let safe = inspect_capture_envelope(env).unwrap();
-            assert_eq!(safe.agent, AgentKind::Codex);
-            assert_eq!(
-                safe.body_excerpt.as_deref(),
-                Some("tool_family: file\ntool_call_id: call-patch\noutcome: unknown")
-            );
-            assert!(!safe.raw.to_string().contains("PRIVATE_CONTENT"));
-            assert!(!safe.raw.to_string().contains("private.txt"));
-        }
     }
 
     #[test]
@@ -19251,7 +18597,7 @@ pub(crate) mod tests {
         });
         let transformed = crate::assistant_capture::transform_for_client(
             &mut assistant_body,
-            AgentKind::ClaudeCode,
+            AgentKind::Other,
             HookEvent::Stop,
         );
         assert!(transformed.captured);
@@ -19813,7 +19159,7 @@ pub(crate) mod tests {
         let handoff = build_auto_handoff(
             WorkspaceId::new(),
             ProjectId::new(),
-            AgentKind::ClaudeCode,
+            AgentKind::Other,
             SessionId::new(),
             None,
             &observations,
@@ -19837,7 +19183,7 @@ pub(crate) mod tests {
         let handoff = build_auto_handoff(
             WorkspaceId::new(),
             ProjectId::new(),
-            AgentKind::ClaudeCode,
+            AgentKind::Other,
             SessionId::new(),
             None,
             &with_real_tool,
@@ -19863,7 +19209,7 @@ pub(crate) mod tests {
         build_auto_handoff(
             WorkspaceId::new(),
             ProjectId::new(),
-            AgentKind::ClaudeCode,
+            AgentKind::Other,
             SessionId::new(),
             None,
             observations,
@@ -20253,7 +19599,7 @@ pub(crate) mod tests {
                     repo_fingerprint: "repo".into(),
                     worktree_fingerprint: "worktree".into(),
                     cwd: cwd.clone(),
-                    agent: AgentKind::ClaudeCode,
+                    agent: AgentKind::Other,
                     automatic_harness: false,
                     available_agents: Vec::new(),
                     selection: ai_memory_store::WorkstreamSelection::Current,
@@ -20275,7 +19621,7 @@ pub(crate) mod tests {
                     fetch_managed_context(
                         &state,
                         &query,
-                        AgentKind::ClaudeCode,
+                        AgentKind::Other,
                         state.workspace_id,
                         state.project_id,
                         None
@@ -20465,7 +19811,7 @@ pub(crate) mod tests {
                     workspace_id: ws,
                     project_id: proj,
                     from_session_id: None,
-                    from_agent: AgentKind::Codex,
+                    from_agent: AgentKind::Other,
                     to_agent: None,
                     cwd: None,
                     summary: marker.to_string(),
@@ -20631,7 +19977,7 @@ pub(crate) mod tests {
                     id: session_id,
                     workspace_id: state.workspace_id,
                     project_id: proj,
-                    agent_kind: AgentKind::ClaudeCode,
+                    agent_kind: AgentKind::Other,
                     cwd: None,
                     actor_user: None,
                 })

@@ -661,7 +661,7 @@ impl HookEnvelope {
         } else {
             None
         };
-        if agent == AgentKind::AntigravityCli {
+        if agent == AgentKind::Other {
             crate::antigravity::enrich_antigravity_step_output(&mut raw, event, None);
         }
         let tool_metadata = tool_observation_metadata(agent, &raw, event == HookEvent::PreToolUse);
@@ -669,7 +669,7 @@ impl HookEnvelope {
             && closed_tool_agent(agent);
         let title_hint = if closed_tool_event {
             tool_metadata.as_ref().map(safe_tool_title).or_else(|| {
-                (event == HookEvent::PostToolUse && agent == AgentKind::OpenCode)
+                (event == HookEvent::PostToolUse && agent == AgentKind::Other)
                     .then(|| legacy_tool_title(event, agent, &raw))
                     .flatten()
             })
@@ -684,7 +684,7 @@ impl HookEnvelope {
         };
         let body_excerpt = if closed_tool_event {
             safe_tool_body(event, tool_metadata.as_ref(), agent, &raw).or_else(|| {
-                (event == HookEvent::PostToolUse && agent == AgentKind::OpenCode)
+                (event == HookEvent::PostToolUse && agent == AgentKind::Other)
                     .then(|| legacy_tool_body(event, agent, &raw))
                     .flatten()
             })
@@ -794,7 +794,7 @@ fn legacy_tool_title(
     agent: AgentKind,
     raw: &serde_json::Value,
 ) -> Option<String> {
-    let payload = (event == HookEvent::PostToolUse && agent == AgentKind::OpenCode)
+    let payload = (event == HookEvent::PostToolUse && agent == AgentKind::Other)
         .then(|| raw.get("payload"))
         .flatten()?;
     extract_string(payload, &["tool"]).filter(|_| {
@@ -807,7 +807,7 @@ fn legacy_tool_title(
 }
 
 fn legacy_tool_body(event: HookEvent, agent: AgentKind, raw: &serde_json::Value) -> Option<String> {
-    let payload = (event == HookEvent::PostToolUse && agent == AgentKind::OpenCode)
+    let payload = (event == HookEvent::PostToolUse && agent == AgentKind::Other)
         .then(|| raw.get("payload"))
         .flatten()?;
     let tool = extract_string(payload, &["tool"])?;
@@ -820,33 +820,10 @@ fn legacy_tool_body(event: HookEvent, agent: AgentKind, raw: &serde_json::Value)
 }
 
 const fn closed_tool_agent(agent: AgentKind) -> bool {
-    matches!(
-        agent,
-        AgentKind::ClaudeCode
-            | AgentKind::CommandCode
-            | AgentKind::Codex
-            // Cursor's own hooks and its copies of the Claude Code hooks carry
-            // Claude's snake_case tool aliases.
-            | AgentKind::Cursor
-            | AgentKind::OpenCode
-            | AgentKind::Pi
-            | AgentKind::Omp
-            | AgentKind::AntigravityCli
-            | AgentKind::Grok
-            | AgentKind::Hermes
-            | AgentKind::KiroCli
-            | AgentKind::Pool
-            | AgentKind::Zcode
-            | AgentKind::CopilotCli
-            | AgentKind::Grizzybot
-            | AgentKind::Droid
-            | AgentKind::Muse
-            // CodeBuddy Code sends Claude Code's snake_case tool fields
-            // (#1299). Unknown values stay `Other` and keep the capture-only
-            // path.
-            | AgentKind::CodeBuddy
-            | AgentKind::IbmBob
-    )
+    // Cursor's own hooks and its copies of the Claude Code hooks carry
+    // Claude's snake_case tool aliases, which the metadata and outcome
+    // extractors treat as the closed shape.
+    matches!(agent, AgentKind::Cursor)
 }
 
 fn safe_tool_title(metadata: &ToolObservationMetadata) -> String {
@@ -916,60 +893,20 @@ fn safe_tool_body(
             if metadata.tool_family == crate::capture_policy::ToolFamily::Unknown {
                 return Some(summary);
             }
-            let result = if agent == AgentKind::Codex {
-                // Codex's native schema has one top-level JSON response.
-                // Do not promote unrelated aliases or nested payloads to output.
-                raw.get("tool_response").and_then(value_to_text)
-            } else if agent == AgentKind::CopilotCli {
-                // Copilot CLI's VS-Code-compatible `PostToolUse` nests the
-                // model-facing text at `tool_result.text_result_for_llm`
-                // (#1040); read only that documented field so `result_type`
-                // never leaks in through an object-stringify fallback.
-                raw.pointer("/tool_result/text_result_for_llm")
-                    .and_then(value_to_text)
-                    .or_else(|| extract_content(raw, &["error"]))
-            } else if agent == AgentKind::Hermes {
-                // Hermes 3.x nests the tool result inside `extra.result`
-                // (`agent/shell_hooks.py::_payload_fields` keeps everything
-                // not in the top-level key set inside `extra`). Read only
-                // that documented field plus `error_message` so unrelated
-                // `extra` telemetry (task_id, middleware_trace, …) never
-                // leaks in through an object-stringify fallback.
-                raw.pointer("/extra/result")
-                    .and_then(value_to_text)
-                    .or_else(|| raw.pointer("/extra/error_message").and_then(value_to_text))
-                    .or_else(|| extract_content(raw, &["error"]))
-            } else {
+            // In the Cursor-only server both known kinds (Cursor Desktop
+            // and the conservative Other fallback) use Claude Code's
+            // `tool_response` family of fields; legacy harness-specific
+            // extraction paths are gone.
+            let result =
                 extract_content(raw, &["tool_response", "tool_output", "output", "result"])
                     .or_else(|| extract_content(raw, &["error"]))
-                    .or_else(|| antigravity_edit_content(agent, raw))
-            }
-            .unwrap_or_else(|| "(no output captured)".into());
+                    .unwrap_or_else(|| "(no output captured)".into());
             summary.push_str("\n---\n");
             summary.push_str(&result);
             Some(summary)
         }
         _ => None,
     }
-}
-
-fn antigravity_edit_content(agent: AgentKind, raw: &serde_json::Value) -> Option<String> {
-    if agent != AgentKind::AntigravityCli {
-        return None;
-    }
-    let tool_call = raw.get("toolCall")?;
-    let tool = tool_call.get("name")?.as_str()?;
-    if !matches!(
-        tool.to_ascii_lowercase().as_str(),
-        "write_to_file" | "replace_file_content" | "multi_replace_file_content"
-    ) {
-        return None;
-    }
-    let args = tool_call.get("args")?;
-    extract_content(
-        args,
-        &["ReplacementContent", "CodeContent", "ReplacementChunks"],
-    )
 }
 
 /// The tool a tool event names, under the keys the observation title uses.
@@ -1912,7 +1849,7 @@ mod tests {
 
         let env = HookEnvelope::from_query_and_body(q, raw);
 
-        assert_eq!(env.agent, AgentKind::ClaudeCode);
+        assert_eq!(env.agent, AgentKind::Other);
     }
 
     #[test]
@@ -1934,7 +1871,7 @@ mod tests {
         let env = HookEnvelope::from_query_and_body(q.clone(), raw);
 
         assert_eq!(env.event, HookEvent::PostToolUse);
-        assert_eq!(env.agent, AgentKind::Devin);
+        assert_eq!(env.agent, AgentKind::Other);
         assert_eq!(env.session_id.as_deref(), Some("bridge-session-123"));
     }
 
@@ -1976,7 +1913,7 @@ mod tests {
 
         let env = HookEnvelope::from_query_and_body(q, raw);
 
-        assert_eq!(env.agent, AgentKind::Devin);
+        assert_eq!(env.agent, AgentKind::Other);
         assert_eq!(env.session_id.as_deref(), Some("bridge-session-123"));
         assert_eq!(env.cwd.as_deref(), Some("/resolved/from/hook"));
     }
@@ -2011,7 +1948,7 @@ mod tests {
         });
         let env = HookEnvelope::from_query_and_body(q, raw);
         assert_eq!(env.event, HookEvent::SessionStart);
-        assert_eq!(env.agent, AgentKind::Devin);
+        assert_eq!(env.agent, AgentKind::Other);
         assert!(env.session_id.is_none());
         assert!(env.cwd.is_none());
     }
@@ -2028,36 +1965,6 @@ mod tests {
         );
 
         assert_eq!(env.project_strategy, ProjectStrategy::RepoRoot);
-    }
-
-    /// Antigravity CLI identifies the conversation as `conversationId`
-    /// and reports cwd-like routing through `workspacePaths`.
-    #[test]
-    fn envelope_extracts_antigravity_conversation_and_workspace_path() {
-        let q = HookQuery {
-            event: "PreToolUse".into(),
-            agent: Some("agy".into()),
-            ..Default::default()
-        };
-        let raw = serde_json::json!({
-            "conversationId": "ec33ebf9-0cba-4100-8142-c61503f6c587",
-            "workspacePaths": ["/workspace/project", "/workspace/other"],
-            "toolCall": {
-                "name": "run_command",
-                "args": {"CommandLine": "cargo test"}
-            },
-            "stepIdx": 3
-        });
-        let env = HookEnvelope::from_query_and_body(q, raw);
-
-        assert_eq!(env.agent, AgentKind::AntigravityCli);
-        assert_eq!(env.event, HookEvent::PreToolUse);
-        assert_eq!(
-            env.session_id.as_deref(),
-            Some("ec33ebf9-0cba-4100-8142-c61503f6c587")
-        );
-        assert_eq!(env.cwd.as_deref(), Some("/workspace/project"));
-        assert_eq!(env.title_hint.as_deref(), Some("tool non-file"));
     }
 
     #[test]
@@ -2172,29 +2079,29 @@ mod tests {
     /// remain forgiving.
     #[test]
     fn agent_name_aliases_all_map_correctly() {
-        assert_eq!(parse_agent("claude-code"), AgentKind::ClaudeCode);
-        assert_eq!(parse_agent("claude_code"), AgentKind::ClaudeCode);
-        assert_eq!(parse_agent("claude"), AgentKind::ClaudeCode);
-        assert_eq!(parse_agent("codex"), AgentKind::Codex);
-        assert_eq!(parse_agent("opencode"), AgentKind::OpenCode);
-        assert_eq!(parse_agent("open-code"), AgentKind::OpenCode);
+        assert_eq!(parse_agent("claude-code"), AgentKind::Other);
+        assert_eq!(parse_agent("claude_code"), AgentKind::Other);
+        assert_eq!(parse_agent("claude"), AgentKind::Other);
+        assert_eq!(parse_agent("codex"), AgentKind::Other);
+        assert_eq!(parse_agent("opencode"), AgentKind::Other);
+        assert_eq!(parse_agent("open-code"), AgentKind::Other);
         assert_eq!(parse_agent("cursor"), AgentKind::Cursor);
-        assert_eq!(parse_agent("gemini-cli"), AgentKind::GeminiCli);
-        assert_eq!(parse_agent("gemini"), AgentKind::GeminiCli);
-        assert_eq!(parse_agent("claude-desktop"), AgentKind::ClaudeDesktop);
-        assert_eq!(parse_agent("openclaw"), AgentKind::OpenClaw);
-        assert_eq!(parse_agent("antigravity-cli"), AgentKind::AntigravityCli);
-        assert_eq!(parse_agent("antigravity"), AgentKind::AntigravityCli);
-        assert_eq!(parse_agent("agy"), AgentKind::AntigravityCli);
-        assert_eq!(parse_agent("omp"), AgentKind::Omp);
-        assert_eq!(parse_agent("pi"), AgentKind::Pi);
-        assert_eq!(parse_agent("oh-my-pi"), AgentKind::Omp);
-        assert_eq!(parse_agent("hermes"), AgentKind::Hermes);
-        assert_eq!(parse_agent("hermes-agent"), AgentKind::Hermes);
-        assert_eq!(parse_agent("pool"), AgentKind::Pool);
-        assert_eq!(parse_agent("poolside"), AgentKind::Pool);
-        assert_eq!(parse_agent("codebuddy"), AgentKind::CodeBuddy);
-        assert_eq!(parse_agent("code-buddy"), AgentKind::CodeBuddy);
+        assert_eq!(parse_agent("gemini-cli"), AgentKind::Other);
+        assert_eq!(parse_agent("gemini"), AgentKind::Other);
+        assert_eq!(parse_agent("claude-desktop"), AgentKind::Other);
+        assert_eq!(parse_agent("openclaw"), AgentKind::Other);
+        assert_eq!(parse_agent("antigravity-cli"), AgentKind::Other);
+        assert_eq!(parse_agent("antigravity"), AgentKind::Other);
+        assert_eq!(parse_agent("agy"), AgentKind::Other);
+        assert_eq!(parse_agent("omp"), AgentKind::Other);
+        assert_eq!(parse_agent("pi"), AgentKind::Other);
+        assert_eq!(parse_agent("oh-my-pi"), AgentKind::Other);
+        assert_eq!(parse_agent("hermes"), AgentKind::Other);
+        assert_eq!(parse_agent("hermes-agent"), AgentKind::Other);
+        assert_eq!(parse_agent("pool"), AgentKind::Other);
+        assert_eq!(parse_agent("poolside"), AgentKind::Other);
+        assert_eq!(parse_agent("codebuddy"), AgentKind::Other);
+        assert_eq!(parse_agent("code-buddy"), AgentKind::Other);
         // Anything else is `Other`. Critical for the hook router:
         // a typo in the query string must not crash, it just gets
         // attributed to the catch-all bucket.
@@ -2219,435 +2126,6 @@ mod tests {
         assert!(env.cwd.is_none());
         assert!(env.title_hint.is_none());
         assert!(env.body_excerpt.is_none());
-    }
-
-    #[test]
-    fn hermes_tool_title_uses_only_the_verified_shell_hook_shape() {
-        let raw = serde_json::json!({
-            "hook_event_name": "post_tool_call",
-            "tool_name": "write_file",
-            "tool_input": {"path": "src/lib.rs", "content": "untrusted"},
-            "session_id": "hermes-session",
-            "cwd": "/repo",
-            "extra": {"tool_call_id": "call-42", "status": "ok"}
-        });
-        let env = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "post-tool-use".into(),
-                agent: Some("hermes".into()),
-                ..Default::default()
-            },
-            raw.clone(),
-        );
-        assert_eq!(env.agent, AgentKind::Hermes);
-        assert_eq!(env.title_hint.as_deref(), Some("tool file"));
-        assert_eq!(env.session_id.as_deref(), Some("hermes-session"));
-        assert_eq!(env.cwd.as_deref(), Some("/repo"));
-
-        let unknown = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "post-tool-use".into(),
-                agent: Some("unverified-agent".into()),
-                ..Default::default()
-            },
-            raw,
-        );
-        assert_eq!(unknown.agent, AgentKind::Other);
-        assert!(unknown.title_hint.is_none());
-    }
-
-    /// CodeBuddy posts Claude Code's tool payload. The same body under
-    /// `agent=codebuddy` is a closed tool observation; under an unknown
-    /// agent it stays capture-only (`title` empty, no tool family).
-    #[test]
-    fn codebuddy_post_tool_use_uses_the_claude_shaped_parser() {
-        let raw = serde_json::json!({
-            "hook_event_name": "PostToolUse",
-            "session_id": "11111111-2222-3333-4444-555555555555",
-            "cwd": "/repo",
-            "tool_name": "Read",
-            "tool_use_id": "toolu_codebuddy",
-            "tool_input": {"file_path": "src/lib.rs"},
-            "tool_response": "file contents"
-        });
-        let env = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "post-tool-use".into(),
-                agent: Some("codebuddy".into()),
-                ..Default::default()
-            },
-            raw.clone(),
-        );
-        assert_eq!(env.agent, AgentKind::CodeBuddy);
-        assert_eq!(
-            env.session_id.as_deref(),
-            Some("11111111-2222-3333-4444-555555555555")
-        );
-        assert_eq!(env.cwd.as_deref(), Some("/repo"));
-        assert_eq!(env.title_hint.as_deref(), Some("tool file"));
-        let body = env.body_excerpt.expect("structured tool body");
-        assert!(body.starts_with("tool_family: file\n"), "{body}");
-        assert!(body.contains("outcome: unknown"), "{body}");
-        assert!(body.contains("tool_call_id: toolu_codebuddy"), "{body}");
-        assert!(body.contains("\n---\nfile contents"), "{body}");
-
-        let unknown = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "post-tool-use".into(),
-                agent: Some("codebuddy-2".into()),
-                ..Default::default()
-            },
-            raw,
-        );
-        assert_eq!(unknown.agent, AgentKind::Other);
-        assert!(unknown.title_hint.is_none());
-        assert!(unknown.body_excerpt.is_none());
-    }
-
-    /// IBM Bob documents the same snake_case tool fields as Claude Code. A
-    /// recognized Bob payload becomes a closed tool observation while an
-    /// unknown agent carrying identical JSON stays on the capture-only path.
-    #[test]
-    fn ibm_bob_post_tool_use_uses_the_claude_shaped_parser() {
-        let raw = serde_json::json!({
-            "hook_event_name": "PostToolUse",
-            "session_id": "11111111-2222-3333-4444-555555555555",
-            "cwd": "/repo",
-            "tool_name": "Read",
-            "tool_use_id": "toolu_bob",
-            "tool_input": {"file_path": "src/lib.rs"},
-            "tool_response": "file contents"
-        });
-        let env = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "post-tool-use".into(),
-                agent: Some("ibm-bob".into()),
-                ..Default::default()
-            },
-            raw.clone(),
-        );
-        assert_eq!(env.agent, AgentKind::IbmBob);
-        assert_eq!(env.title_hint.as_deref(), Some("tool file"));
-        let body = env.body_excerpt.expect("structured tool body");
-        assert!(body.starts_with("tool_family: file\n"), "{body}");
-        assert!(body.contains("tool_call_id: toolu_bob"), "{body}");
-        assert!(body.contains("\n---\nfile contents"), "{body}");
-
-        let unknown = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "post-tool-use".into(),
-                agent: Some("ibm-bob-2".into()),
-                ..Default::default()
-            },
-            raw,
-        );
-        assert_eq!(unknown.agent, AgentKind::Other);
-        assert!(unknown.title_hint.is_none());
-        assert!(unknown.body_excerpt.is_none());
-    }
-
-    /// Hermes 3.x puts the tool result inside `extra.result` and mirrors the
-    /// call status in `extra.status` (`ok` | `error`). The extractor must read
-    /// both from the documented `extra` object: output lands in the body
-    /// instead of "(no output captured)", and a proven status maps to a real
-    /// outcome instead of permanent `unknown`. Live-captured 2026-10-07 from
-    /// `agent/shell_hooks.py::_payload_fields` +
-    /// `model_tools.py::_emit_post_tool_call_hook` (Hermes main).
-    #[test]
-    fn hermes_output_and_outcome_come_from_the_extra_object() {
-        let raw = serde_json::json!({
-            "hook_event_name": "post_tool_call",
-            "tool_name": "execute_code",
-            "tool_input": {"code": "print(1)"},
-            "session_id": "hermes-session",
-            "cwd": "/repo",
-            "extra": {
-                "tool_call_id": "call-43",
-                "status": "ok",
-                "result": {"output": "1", "exit_code": 0}
-            }
-        });
-        let env = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "post-tool-use".into(),
-                agent: Some("hermes".into()),
-                ..Default::default()
-            },
-            raw,
-        );
-        let body = env.body_excerpt.expect("post-tool-use body");
-        assert!(body.contains("tool_family: non-file"), "body: {body}");
-        assert_eq!(env.title_hint.as_deref(), Some("tool non-file"));
-        assert!(
-            body.contains("outcome: success"),
-            "status ok must map to success — body: {body}"
-        );
-        assert!(
-            body.contains("\"output\": \"1\"") || body.contains("exit_code"),
-            "extra.result content must appear in the body — body: {body}"
-        );
-    }
-
-    #[test]
-    fn hermes_error_status_maps_to_error_outcome() {
-        let raw = serde_json::json!({
-            "hook_event_name": "post_tool_call",
-            "tool_name": "terminal",
-            "tool_input": {"command": "false"},
-            "session_id": "hermes-session",
-            "cwd": "/repo",
-            "extra": {
-                "tool_call_id": "call-44",
-                "status": "error",
-                "error_message": "command failed with exit code 1",
-                "result": "command failed"
-            }
-        });
-        let env = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "post-tool-use".into(),
-                agent: Some("hermes".into()),
-                ..Default::default()
-            },
-            raw,
-        );
-        let body = env.body_excerpt.expect("post-tool-use body");
-        assert!(body.contains("outcome: error"), "body: {body}");
-    }
-
-    /// A truly unknown tool name keeps the upstream privacy invariant: the
-    /// family gates output capture, so `unknown` still omits the body. Real
-    /// Hermes tools that execute code or reach the web are named in
-    /// `family()` and classify as `non-file` (see
-    /// `hermes_documented_tool_names_map_to_canonical_families`); a brand-new
-    /// Hermes tool degrades to metadata-only until its name is upstreamed —
-    /// capture fidelity is preserved by extending the list, not by relaxing
-    /// the unknown-family gate.
-    #[test]
-    fn hermes_unknown_family_keeps_metadata_only_invariant() {
-        let raw = serde_json::json!({
-            "hook_event_name": "post_tool_call",
-            "tool_name": "brand_new_tool",
-            "tool_input": {"query": "x"},
-            "session_id": "hermes-session",
-            "cwd": "/repo",
-            "extra": {
-                "tool_call_id": "call-45",
-                "status": "ok",
-                "result": "search hit count: 3"
-            }
-        });
-        let env = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "post-tool-use".into(),
-                agent: Some("hermes".into()),
-                ..Default::default()
-            },
-            raw,
-        );
-        let body = env.body_excerpt.expect("post-tool-use body");
-        assert!(body.contains("tool_family: unknown"), "body: {body}");
-        assert!(body.contains("outcome: success"), "body: {body}");
-        assert!(
-            !body.contains("search hit count: 3"),
-            "unknown family must not leak output — body: {body}"
-        );
-    }
-
-    /// Real Hermes execution-surface tools classify as non-file so their
-    /// bodies carry the `extra.result` output (live names, 2026-10-07).
-    #[test]
-    fn hermes_execution_tools_classify_non_file_and_capture_output() {
-        for tool in ["execute_code", "browser_exec", "web_extract"] {
-            let raw = serde_json::json!({
-                "hook_event_name": "post_tool_call",
-                "tool_name": tool,
-                "tool_input": {"query": "x"},
-                "session_id": "hermes-session",
-                "cwd": "/repo",
-                "extra": {
-                    "tool_call_id": "call-46",
-                    "status": "ok",
-                    "result": "CAPTURE-ME-42"
-                }
-            });
-            let env = HookEnvelope::from_query_and_body(
-                HookQuery {
-                    event: "post-tool-use".into(),
-                    agent: Some("hermes".into()),
-                    ..Default::default()
-                },
-                raw,
-            );
-            let body = env.body_excerpt.unwrap_or_default();
-            assert!(
-                body.contains("tool_family: non-file"),
-                "{tool} should be non-file — body: {body}"
-            );
-            assert!(
-                body.contains("CAPTURE-ME-42"),
-                "{tool} output must be captured — body: {body}"
-            );
-        }
-    }
-
-    #[test]
-    fn pool_tool_title_uses_the_documented_snake_case_shape() {
-        let raw = serde_json::json!({
-            "hook_event_name": "PostToolUse",
-            "tool_name": "edit",
-            "tool_input": {"path": "src/lib.rs", "old_string": "a", "new_string": "b"},
-            "session_id": "pool-session",
-            "cwd": "/repo"
-        });
-        let env = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "post-tool-use".into(),
-                agent: Some("pool".into()),
-                ..Default::default()
-            },
-            raw,
-        );
-        assert_eq!(env.agent, AgentKind::Pool);
-        assert_eq!(env.title_hint.as_deref(), Some("tool file"));
-        assert_eq!(env.session_id.as_deref(), Some("pool-session"));
-        assert_eq!(env.cwd.as_deref(), Some("/repo"));
-    }
-
-    #[test]
-    fn zcode_tool_payload_uses_the_captured_dual_casing_shape() {
-        // Live-captured PostToolUse payload (embedded engine v0.16.5, #512):
-        // native camelCase plus Claude Code-compatible snake_case aliases on
-        // every shared field.
-        let raw = serde_json::json!({
-            "hookEventName": "PostToolUse",
-            "hook_event_name": "PostToolUse",
-            "toolName": "Bash",
-            "tool_name": "Bash",
-            "toolCallId": "call_86cedcb9c40a4a40856e9ee7",
-            "tool_use_id": "call_86cedcb9c40a4a40856e9ee7",
-            "toolInput": {"command": "echo capture-ok"},
-            "tool_input": {"command": "echo capture-ok"},
-            "sessionId": "sess_4fc06da3",
-            "session_id": "sess_4fc06da3",
-            "cwd": "/tmp/zcode-capture"
-        });
-        let env = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "post-tool-use".into(),
-                agent: Some("zcode".into()),
-                ..Default::default()
-            },
-            raw,
-        );
-        assert_eq!(env.agent, AgentKind::Zcode);
-        assert_eq!(env.session_id.as_deref(), Some("sess_4fc06da3"));
-        assert_eq!(env.cwd.as_deref(), Some("/tmp/zcode-capture"));
-        assert_eq!(env.title_hint.as_deref(), Some("tool non-file"));
-    }
-
-    #[test]
-    fn grizzybot_tool_title_is_a_closed_family() {
-        let raw = serde_json::json!({
-            "hook_event_name": "PostToolUse",
-            "tool_name": "write_file",
-            "tool_input": {"path": "notes.md", "content": "untrusted"},
-            "tool_response": "ok",
-            "session_id": "gb-session",
-            "cwd": "/bot/home"
-        });
-        let env = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "post-tool-use".into(),
-                agent: Some("grizzybot".into()),
-                ..Default::default()
-            },
-            raw,
-        );
-        assert_eq!(env.agent, AgentKind::Grizzybot);
-        assert_eq!(env.title_hint.as_deref(), Some("tool file"));
-        assert_eq!(env.session_id.as_deref(), Some("gb-session"));
-        assert_eq!(env.cwd.as_deref(), Some("/bot/home"));
-    }
-
-    /// Factory Droid's PostToolUse is Claude-shaped with no tool-call id
-    /// (0.240.0 tool schemas, #1240): a `Create` is a closed `file` family and
-    /// its `tool_response` is the captured output.
-    #[test]
-    fn droid_create_post_tool_use_is_a_closed_file_family_without_call_id() {
-        let raw = serde_json::json!({
-            "hook_event_name": "PostToolUse",
-            "permission_mode": "auto-low",
-            "tool_name": "Create",
-            "tool_input": {"file_path": "/repo/notes.md", "content": "hello"},
-            "tool_response": {"filePath": "/repo/notes.md", "success": true},
-            "session_id": "droid-session",
-            "transcript_path": "/home/u/.factory/sessions/x.jsonl",
-            "cwd": "/repo"
-        });
-        let env = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "post-tool-use".into(),
-                agent: Some("droid".into()),
-                ..Default::default()
-            },
-            raw,
-        );
-        assert_eq!(env.agent, AgentKind::Droid);
-        assert_eq!(env.title_hint.as_deref(), Some("tool file"));
-        assert_eq!(env.session_id.as_deref(), Some("droid-session"));
-        let body = env.body_excerpt.expect("post-tool-use body");
-        assert!(body.starts_with("tool_family: file\n"), "{body}");
-        assert!(!body.contains("tool_call_id"), "{body}");
-        assert!(body.contains("/repo/notes.md"), "{body}");
-    }
-
-    /// Meta Muse Code's PostToolUse and PostToolUseFailure, as captured
-    /// offline from Muse Code 1.4.7 (paths rewritten): a `write_file` is a
-    /// closed `file` family that keeps its `tool_use_id`, the session id is
-    /// the payload's UUIDv7, and a failure aliases to `post-tool-use`.
-    #[test]
-    fn muse_post_tool_use_is_a_closed_file_family_with_call_id() {
-        let raw = serde_json::json!({
-            "cwd": "/repo",
-            "hook_event_name": "PostToolUse",
-            "model": "muse-wonder-1.0",
-            "model_provider": "meta",
-            "permission_mode": "bypassPermissions",
-            "session_id": "01a13669-dc61-7a72-b5ec-ad2f300ffd26",
-            "tool_input": {"content": "alpha\n", "path": "notes.txt"},
-            "tool_name": "write_file",
-            "tool_response": {
-                "filePath": "/repo/notes.txt",
-                "structuredPatch": [{"lines": ["+alpha"], "newLines": 1, "newStart": 1, "oldLines": 0, "oldStart": 1}]
-            },
-            "tool_use_id": "call_30a33793ad9c",
-            "transcript_path": null,
-            "turn_id": "ccfe4a87-c654-49f5-b5e9-473015c7a90b"
-        });
-        let env = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "post-tool-use".into(),
-                agent: Some("muse".into()),
-                ..Default::default()
-            },
-            raw,
-        );
-        assert_eq!(env.agent, AgentKind::Muse);
-        assert_eq!(env.title_hint.as_deref(), Some("tool file"));
-        assert_eq!(
-            env.session_id.as_deref(),
-            Some("01a13669-dc61-7a72-b5ec-ad2f300ffd26")
-        );
-        assert_eq!(env.cwd.as_deref(), Some("/repo"));
-        let body = env.body_excerpt.expect("post-tool-use body");
-        assert!(body.starts_with("tool_family: file\n"), "{body}");
-        assert!(body.contains("call_30a33793ad9c"), "{body}");
-
-        assert_eq!(
-            HookEvent::parse("PostToolUseFailure"),
-            HookEvent::PostToolUse
-        );
     }
 
     /// Body is well-formed JSON but the expected `session_id` /
@@ -2946,28 +2424,6 @@ mod tests {
         assert_eq!(env.body_excerpt.as_deref(), Some("hello"));
     }
 
-    #[test]
-    fn post_tool_excerpt_truncates_without_splitting_utf8() {
-        let q = HookQuery {
-            event: "post-tool-use".into(),
-            agent: Some("claude-code".into()),
-            ..Default::default()
-        };
-        let output = format!("{}é", "x".repeat(1_999));
-        let env = HookEnvelope::from_query_and_body(
-            q,
-            serde_json::json!({
-                "tool_name": "Bash",
-                "tool_input": {},
-                "result": output,
-            }),
-        );
-        let excerpt = env.body_excerpt.unwrap();
-        assert!(excerpt.starts_with("tool_family: non-file\noutcome: unknown\n---\n"));
-        let capped = truncate_utf8_bytes(&excerpt, durable_body_cap(HookEvent::PostToolUse));
-        assert!(capped.ends_with('…'));
-    }
-
     /// Regression: the native-binary hook command sends the script stem
     /// `user-prompt-submit` as the event token (rendered by `render_shared.rs`,
     /// forwarded verbatim by `ai-memory hook`). The parser must map it to
@@ -2982,59 +2438,6 @@ mod tests {
         assert_eq!(
             HookEvent::parse("user_prompt_submit"),
             HookEvent::UserPrompt
-        );
-    }
-
-    /// Claude Code sends `tool_response` as an array of content blocks
-    /// (`[{ "type": "text", "text": "…" }]`). The body excerpt must capture
-    /// that text instead of falling back to "(no output captured)".
-    #[test]
-    fn post_tool_excerpt_captures_array_tool_response() {
-        let q = HookQuery {
-            event: "post-tool-use".into(),
-            agent: Some("claude-code".into()),
-            ..Default::default()
-        };
-        let env = HookEnvelope::from_query_and_body(
-            q,
-            serde_json::json!({
-                "tool_name": "Bash",
-                "tool_input": {},
-                "tool_response": [{"type": "text", "text": "MARKER_OUTPUT_123"}],
-            }),
-        );
-        let body = env.body_excerpt.expect("post-tool body");
-        assert!(
-            body.contains("MARKER_OUTPUT_123"),
-            "array tool_response text should be captured: {body:?}"
-        );
-        assert!(
-            !body.contains("(no output captured)"),
-            "should not fall back when output is present: {body:?}"
-        );
-    }
-
-    /// An object-shaped `tool_response` is serialized into the body rather than
-    /// dropped.
-    #[test]
-    fn post_tool_excerpt_captures_object_tool_response() {
-        let q = HookQuery {
-            event: "post-tool-use".into(),
-            agent: Some("claude-code".into()),
-            ..Default::default()
-        };
-        let env = HookEnvelope::from_query_and_body(
-            q,
-            serde_json::json!({
-                "tool_name": "Read",
-                "tool_input": {},
-                "tool_response": {"stdout": "MARKER_OBJ_456"},
-            }),
-        );
-        let body = env.body_excerpt.expect("post-tool body");
-        assert!(
-            body.contains("MARKER_OBJ_456"),
-            "object tool_response should be serialized into the body: {body:?}"
         );
     }
 
@@ -3088,176 +2491,6 @@ mod tests {
         assert!(pre.body_excerpt.is_some_and(|body| !body.is_empty()));
     }
 
-    /// Kiro CLI's tool hooks carry `tool_name` and `tool_input`, and its
-    /// `PostToolUse` adds `tool_response`: a plain string on the v3 engine
-    /// (live capture, Kiro CLI 2.16.2) and an object with a `success` flag on
-    /// v2. The capture policy already read this shape, but Kiro was absent from
-    /// `closed_tool_agent`, so its tool observations were stored with no title
-    /// or body, the failure mode Grok had in #931.
-    #[test]
-    fn kiro_cli_tool_events_keep_their_family_title_and_output() {
-        let v3 = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "post-tool-use".into(),
-                agent: Some("kiro-cli".into()),
-                ..Default::default()
-            },
-            serde_json::json!({
-                "hook_event_name": "PostToolUse",
-                "session_id": "kiro-v3-session",
-                "cwd": "/workspace/project",
-                "tool_name": "read_file",
-                "tool_input": {"path": "/workspace/project/sample.txt"},
-                "tool_response": "MARKER_KIRO_V3_OUTPUT",
-            }),
-        );
-        assert_eq!(v3.agent, AgentKind::KiroCli);
-        assert_eq!(v3.title_hint.as_deref(), Some("tool file"));
-        let body = v3.body_excerpt.expect("kiro v3 post-tool body");
-        assert!(body.contains("MARKER_KIRO_V3_OUTPUT"), "{body:?}");
-
-        let v2 = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "post-tool-use".into(),
-                agent: Some("kiro-cli".into()),
-                ..Default::default()
-            },
-            serde_json::json!({
-                "session_id": "kiro-v2-session",
-                "cwd": "/workspace/project",
-                "tool_name": "fs_read",
-                "tool_input": {"operations": [{"mode": "Line", "path": "src/lib.rs"}]},
-                "tool_response": {"success": true, "result": ["MARKER_KIRO_V2_OUTPUT"]},
-            }),
-        );
-        assert_eq!(v2.title_hint.as_deref(), Some("tool file"));
-        let body = v2.body_excerpt.expect("kiro v2 post-tool body");
-        assert!(body.contains("outcome: success"), "{body:?}");
-        assert!(body.contains("MARKER_KIRO_V2_OUTPUT"), "{body:?}");
-
-        let pre = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "pre-tool-use".into(),
-                agent: Some("kiro-cli".into()),
-                ..Default::default()
-            },
-            serde_json::json!({
-                "hook_event_name": "PreToolUse",
-                "session_id": "kiro-v3-session",
-                "cwd": "/workspace/project",
-                "tool_name": "read_file",
-                "tool_input": {"path": "/workspace/project/sample.txt"},
-            }),
-        );
-        assert_eq!(pre.title_hint.as_deref(), Some("tool file"));
-        assert!(pre.body_excerpt.is_some_and(|body| !body.is_empty()));
-    }
-
-    /// Claude Code's Windows `PowerShell` tool shares Bash's payload shape but
-    /// fell through to the unknown family, so its output was never stored
-    /// (#1186). The PreToolUse body still never carries the command.
-    #[test]
-    fn claude_code_powershell_tool_keeps_its_family_title_and_output() {
-        let post = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "post-tool-use".into(),
-                agent: Some("claude-code".into()),
-                ..Default::default()
-            },
-            serde_json::json!({
-                "session_id": "s",
-                "tool_name": "PowerShell",
-                "tool_input": {"command": "Get-ChildItem SENTINEL_COMMAND", "description": "list"},
-                "tool_response": {"stdout": "MARKER_POWERSHELL_1186", "stderr": ""},
-                "tool_use_id": "toolu_1186",
-            }),
-        );
-        assert_eq!(post.title_hint.as_deref(), Some("tool non-file"));
-        let body = post.body_excerpt.expect("powershell post-tool body");
-        assert!(body.contains("tool_family: non-file"), "{body:?}");
-        assert!(body.contains("MARKER_POWERSHELL_1186"), "{body:?}");
-
-        let pre = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "pre-tool-use".into(),
-                agent: Some("claude-code".into()),
-                ..Default::default()
-            },
-            serde_json::json!({
-                "session_id": "s",
-                "tool_name": "PowerShell",
-                "tool_input": {"command": "Get-ChildItem SENTINEL_COMMAND"},
-                "tool_use_id": "toolu_1186",
-            }),
-        );
-        assert_eq!(pre.title_hint.as_deref(), Some("tool non-file"));
-        let body = pre.body_excerpt.expect("powershell pre-tool body");
-        assert!(!body.contains("SENTINEL_COMMAND"), "{body:?}");
-    }
-
-    /// Grok Build CLI posts a `PostToolUse` with Claude Code's snake_case
-    /// aliases (`tool_name` / `tool_input` / `tool_use_id`). It was absent from
-    /// both `closed_tool_agent` and the `tool_observation_metadata` match, so
-    /// every Grok tool observation was stored with an empty body (#931).
-    #[test]
-    fn grok_post_tool_excerpt_captures_tool_response() {
-        let q = HookQuery {
-            event: "post-tool-use".into(),
-            agent: Some("grok".into()),
-            ..Default::default()
-        };
-        let env = HookEnvelope::from_query_and_body(
-            q,
-            serde_json::json!({
-                "tool_name": "Bash",
-                "tool_input": {"command": "ls"},
-                "tool_use_id": "call_grok_1",
-                "tool_response": {"stdout": "MARKER_GROK_931"},
-            }),
-        );
-        let body = env
-            .body_excerpt
-            .expect("grok post-tool body should not be empty");
-        assert!(
-            body.contains("MARKER_GROK_931"),
-            "grok tool_response should be serialized into the body: {body:?}"
-        );
-    }
-
-    /// Copilot CLI's VS-Code-compatible `PostToolUse` nests the output at
-    /// `tool_result.text_result_for_llm` (#1040). Without Copilot in
-    /// `closed_tool_agent` the observation would be stored with an empty body,
-    /// the #931 failure mode Grok had; without the dedicated path the
-    /// `result_type` envelope would leak into the excerpt.
-    #[test]
-    fn copilot_cli_post_tool_excerpt_reads_text_result_for_llm() {
-        let q = HookQuery {
-            event: "post-tool-use".into(),
-            agent: Some("copilot-cli".into()),
-            ..Default::default()
-        };
-        let env = HookEnvelope::from_query_and_body(
-            q,
-            serde_json::json!({
-                "hook_event_name": "PostToolUse",
-                "session_id": "copilot-session",
-                "cwd": "/repo",
-                "tool_name": "bash",
-                "tool_input": {"command": "ls"},
-                "tool_result": {
-                    "result_type": "success",
-                    "text_result_for_llm": "MARKER_COPILOT_1040",
-                },
-            }),
-        );
-        let body = env
-            .body_excerpt
-            .expect("copilot-cli post-tool body should not be empty");
-        assert!(body.contains("MARKER_COPILOT_1040"), "{body:?}");
-        assert!(body.contains("outcome: success"), "{body:?}");
-        assert!(!body.contains("result_type"), "{body:?}");
-    }
-
     /// End-to-end: a native-hook user prompt (`event=user-prompt-submit`,
     /// string `prompt`) maps to `UserPrompt` and keeps its body text.
     #[test]
@@ -3273,299 +2506,6 @@ mod tests {
         );
         assert_eq!(env.event, HookEvent::UserPrompt);
         assert_eq!(env.body_excerpt.as_deref(), Some("MARKER_PROMPT_789"));
-    }
-
-    // Native fields and canonical tool names follow Codex rust-v0.154.0's
-    // pre/post-tool-use schemas. `tool_response` accepts any JSON value.
-    #[test]
-    fn codex_native_tool_pairs_capture_bounded_output_and_stable_metadata() {
-        for (tool, input, response, family, text) in [
-            (
-                "Bash",
-                serde_json::json!({"command": "echo private-input"}),
-                serde_json::json!("native stdout"),
-                "non-file",
-                "native stdout",
-            ),
-            (
-                "apply_patch",
-                serde_json::json!({"command": "*** Begin Patch\n*** Add File: private-input\n+text\n*** End Patch"}),
-                serde_json::json!("Success. Updated the following files:\nA public.txt"),
-                "file",
-                "public.txt",
-            ),
-            (
-                "Bash",
-                serde_json::json!({"command": "private-input"}),
-                serde_json::json!({"stdout": "structured stdout", "exit_code": 1}),
-                "non-file",
-                "structured stdout",
-            ),
-            (
-                "Bash",
-                serde_json::json!({"command": "private-input"}),
-                serde_json::json!([{"type": "text", "text": "block output"}]),
-                "non-file",
-                "block output",
-            ),
-        ] {
-            for event in ["PreToolUse", "PostToolUse"] {
-                let env = HookEnvelope::from_query_and_body(
-                    HookQuery {
-                        event: event.into(),
-                        agent: Some("codex".into()),
-                        ..Default::default()
-                    },
-                    serde_json::json!({
-                        "session_id": "native-codex", "cwd": "/repo", "turn_id": "turn-1",
-                        "hook_event_name": event, "permission_mode": "bypassPermissions",
-                        "tool_name": tool, "tool_input": input, "tool_response": response,
-                        "tool_use_id": "call-native-1",
-                    }),
-                );
-                assert_eq!(env.agent, AgentKind::Codex);
-                assert_eq!(env.session_id.as_deref(), Some("native-codex"));
-                assert_eq!(env.cwd.as_deref(), Some("/repo"));
-                assert_eq!(env.title_hint, Some(format!("tool {family}")));
-                let body = env.body_excerpt.unwrap();
-                assert!(body.starts_with(&format!(
-                    "tool_family: {family}\ntool_call_id: call-native-1"
-                )));
-                assert!(!body.contains("private-input"));
-                if event == "PostToolUse" {
-                    assert!(body.contains("outcome: unknown"));
-                    assert!(body.contains(text));
-                } else {
-                    assert!(!body.contains(text));
-                    assert!(!body.contains("outcome:"));
-                }
-            }
-        }
-        let env = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "PostToolUse".into(),
-                agent: Some("codex".into()),
-                ..Default::default()
-            },
-            serde_json::json!({"tool_name": "Bash", "tool_use_id": "call-long", "tool_response": {"content": [{"type": "text", "text": "é".repeat(2_000)}]}}),
-        );
-        // Extraction no longer caps: the sanitizer must see the full text
-        // before any byte limit runs (#1114). The cap itself is asserted at
-        // the ingest funnel, where it is applied to the scrubbed body.
-        let body = env.body_excerpt.unwrap();
-        assert!(body.contains('é'));
-        assert!(body.len() > TOOL_EXCERPT_MAX_BYTES);
-    }
-
-    #[test]
-    fn codex_native_unknown_and_malformed_tools_do_not_promote_unproven_content() {
-        for raw in [
-            serde_json::json!(null),
-            serde_json::json!([]),
-            serde_json::json!(42),
-            serde_json::json!({"tool_name": 7, "tool_input": {}, "tool_response": "UNPROVEN"}),
-            serde_json::json!({"payload": {"tool_name": "Bash", "tool_input": {}, "tool_response": "UNPROVEN"}}),
-            serde_json::json!({"tool": "Bash", "args": {}, "output": "UNPROVEN"}),
-        ] {
-            for event in ["PreToolUse", "PostToolUse"] {
-                let env = HookEnvelope::from_query_and_body(
-                    HookQuery {
-                        event: event.into(),
-                        agent: Some("codex".into()),
-                        ..Default::default()
-                    },
-                    raw.clone(),
-                );
-                assert!(env.title_hint.is_none());
-                assert!(env.body_excerpt.is_none());
-            }
-        }
-        for tool in ["mcp__fs__read", "update_plan", "UNPROVEN_TOOL"] {
-            let env = HookEnvelope::from_query_and_body(
-                HookQuery {
-                    event: "PostToolUse".into(),
-                    agent: Some("codex".into()),
-                    ..Default::default()
-                },
-                serde_json::json!({"tool_name": tool, "tool_input": {"path": "UNPROVEN"}, "tool_use_id": "call-unknown", "tool_response": {"content": [{"type": "text", "text": "UNPROVEN"}], "structuredContent": {"text": "UNPROVEN"}, "isError": false}}),
-            );
-            assert_eq!(
-                env.body_excerpt.as_deref(),
-                Some("tool_family: unknown\ntool_call_id: call-unknown\noutcome: unknown")
-            );
-        }
-        for response in [
-            serde_json::json!(null),
-            serde_json::json!({}),
-            serde_json::json!([]),
-        ] {
-            let raw = serde_json::json!({"tool_name": "Bash", "tool_use_id": "invalid\nUNPROVEN", "tool_response": response, "output": "UNPROVEN", "error": "UNPROVEN", "payload": {"tool_response": "UNPROVEN"}});
-            let pre = HookEnvelope::from_query_and_body(
-                HookQuery {
-                    event: "PreToolUse".into(),
-                    agent: Some("codex".into()),
-                    ..Default::default()
-                },
-                raw.clone(),
-            );
-            assert!(pre.body_excerpt.is_none(), "missing native input");
-            let post = HookEnvelope::from_query_and_body(
-                HookQuery {
-                    event: "PostToolUse".into(),
-                    agent: Some("codex".into()),
-                    ..Default::default()
-                },
-                raw,
-            );
-            assert_eq!(
-                post.body_excerpt.as_deref(),
-                Some("tool_family: non-file\noutcome: unknown\n---\n(no output captured)")
-            );
-        }
-    }
-
-    #[test]
-    fn closed_tool_summaries_keep_only_safe_metadata_and_cap_total_body() {
-        let fixtures = [
-            (
-                "claude-code",
-                serde_json::json!({"tool_name":"Bash","tool_input":{"command":"SENTINEL_COMMAND","path":"SENTINEL_PATH"},"tool_use_id":"claude-1","output":"SENTINEL_OUTPUT"}),
-                "claude-1",
-                "unknown",
-            ),
-            (
-                "open-code",
-                serde_json::json!({"tool":"bash","args":{"command":"SENTINEL_COMMAND"},"callID":"open-1","output":"SENTINEL_OUTPUT"}),
-                "open-1",
-                "unknown",
-            ),
-            (
-                "pi",
-                serde_json::json!({"tool":"bash","args":{"command":"SENTINEL_COMMAND"},"callID":"pi-1","isError":true,"output":"SENTINEL_OUTPUT"}),
-                "pi-1",
-                "error",
-            ),
-        ];
-        for (agent, raw, id, outcome) in fixtures {
-            let pre = HookEnvelope::from_query_and_body(
-                HookQuery {
-                    event: "pre-tool-use".into(),
-                    agent: Some(agent.into()),
-                    ..Default::default()
-                },
-                raw.clone(),
-            );
-            let pre_body = pre.body_excerpt.expect("pre summary");
-            assert!(pre_body.contains(id));
-            for sentinel in ["SENTINEL_COMMAND", "SENTINEL_PATH", "SENTINEL_OUTPUT"] {
-                assert!(!pre_body.contains(sentinel));
-            }
-            let post = HookEnvelope::from_query_and_body(
-                HookQuery {
-                    event: "post-tool-use".into(),
-                    agent: Some(agent.into()),
-                    ..Default::default()
-                },
-                raw,
-            );
-            let post_body = post.body_excerpt.expect("post summary");
-            assert!(post_body.contains(&format!("outcome: {outcome}")));
-        }
-
-        let long = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "post-tool-use".into(),
-                agent: Some("claude-code".into()),
-                ..Default::default()
-            },
-            serde_json::json!({"tool_name":"Bash","tool_input":{},"tool_use_id":"utf8-1","output": "é".repeat(2_000)}),
-        );
-        let body = long.body_excerpt.unwrap();
-        assert!(body.len() > 2_000);
-        let capped = truncate_utf8_bytes(&body, durable_body_cap(HookEvent::PostToolUse));
-        assert!(capped.len() <= 2_000);
-    }
-
-    #[test]
-    fn unknown_closed_tool_post_never_includes_output_or_name() {
-        let env = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "post-tool-use".into(),
-                agent: Some("claude-code".into()),
-                ..Default::default()
-            },
-            serde_json::json!({"tool_name":"ARBITRARY_TOOL_SENTINEL","tool_use_id":"unknown-1","output":"OUTPUT_SENTINEL"}),
-        );
-        let body = env.body_excerpt.unwrap();
-        assert!(body.contains("tool_family: unknown"));
-        assert!(body.contains("tool_call_id: unknown-1"));
-        assert!(body.contains("outcome: unknown"));
-        assert!(!body.contains("ARBITRARY_TOOL_SENTINEL"));
-        assert!(!body.contains("OUTPUT_SENTINEL"));
-    }
-
-    #[test]
-    fn claude_and_opencode_paired_summaries_share_agent_ids() {
-        for (agent, pre_raw, post_raw, id) in [
-            (
-                "claude-code",
-                serde_json::json!({"tool_name":"Bash","tool_input":{"command":"PRE_COMMAND_SENTINEL"},"tool_use_id":"claude-pair"}),
-                serde_json::json!({"tool_name":"Bash","tool_use_id":"claude-pair","output":"POST_OUTPUT"}),
-                "claude-pair",
-            ),
-            (
-                "open-code",
-                serde_json::json!({"tool":"bash","args":{"path":"PRE_PATH_SENTINEL"},"callID":"open-pair"}),
-                serde_json::json!({"tool":"bash","callID":"open-pair","output":"POST_OUTPUT"}),
-                "open-pair",
-            ),
-        ] {
-            let pre = HookEnvelope::from_query_and_body(
-                HookQuery {
-                    event: "pre-tool-use".into(),
-                    agent: Some(agent.into()),
-                    ..Default::default()
-                },
-                pre_raw,
-            );
-            let post = HookEnvelope::from_query_and_body(
-                HookQuery {
-                    event: "post-tool-use".into(),
-                    agent: Some(agent.into()),
-                    ..Default::default()
-                },
-                post_raw,
-            );
-            let pre_body = pre.body_excerpt.unwrap();
-            let post_body = post.body_excerpt.unwrap();
-            assert!(pre_body.contains(id) && post_body.contains(id));
-            assert!(post_body.contains("POST_OUTPUT"));
-            assert!(!pre_body.contains("SENTINEL"));
-        }
-    }
-
-    #[test]
-    fn antigravity_omits_id_and_unsupported_pre_has_no_body() {
-        let antigravity = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "post-tool-use".into(),
-                agent: Some("antigravity-cli".into()),
-                ..Default::default()
-            },
-            serde_json::json!({"toolCall":{"name":"run_command","args":{}},"error":"private"}),
-        );
-        let body = antigravity.body_excerpt.unwrap();
-        assert!(body.contains("outcome: error"));
-        assert!(!body.contains("tool_call_id"));
-        let unsupported = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "pre-tool-use".into(),
-                agent: Some("other".into()),
-                ..Default::default()
-            },
-            serde_json::json!({"tool_name":"Bash","tool_input":{"command":"private"}}),
-        );
-        assert!(unsupported.body_excerpt.is_none());
     }
 
     #[test]
@@ -3591,382 +2531,5 @@ mod tests {
             serde_json::json!({"last_assistant_message":"SENTINEL_ASSISTANT"}),
         );
         assert!(stop.body_excerpt.is_none());
-    }
-
-    #[test]
-    fn antigravity_outcome_and_call_id_boundaries_are_closed() {
-        let absent = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "post-tool-use".into(),
-                agent: Some("antigravity-cli".into()),
-                ..Default::default()
-            },
-            serde_json::json!({"toolCall":{"name":"run_command","args":{}}}),
-        );
-        assert!(absent.body_excerpt.unwrap().contains("outcome: unknown"));
-        for (error, outcome) in [
-            (serde_json::json!(null), "unknown"),
-            (serde_json::json!(""), "unknown"),
-            (serde_json::json!("failed"), "error"),
-        ] {
-            let env = HookEnvelope::from_query_and_body(
-                HookQuery {
-                    event: "post-tool-use".into(),
-                    agent: Some("antigravity-cli".into()),
-                    ..Default::default()
-                },
-                serde_json::json!({"toolCall":{"name":"run_command","args":{}},"error":error}),
-            );
-            assert!(
-                env.body_excerpt
-                    .unwrap()
-                    .contains(&format!("outcome: {outcome}"))
-            );
-        }
-        let id = "a".repeat(129);
-        let env = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "pre-tool-use".into(),
-                agent: Some("claude-code".into()),
-                ..Default::default()
-            },
-            serde_json::json!({"tool_name":"Bash","tool_input":{},"tool_use_id":id}),
-        );
-        assert!(!env.body_excerpt.unwrap().contains("tool_call_id"));
-    }
-
-    #[test]
-    fn antigravity_native_file_and_search_tools_render_captured_content() {
-        for (tool, args, family) in [
-            (
-                "view_file",
-                serde_json::json!({"TargetFile": "src/main.rs"}),
-                "file",
-            ),
-            (
-                "replace_file_content",
-                serde_json::json!({"TargetFile": "src/main.rs"}),
-                "file",
-            ),
-            (
-                "list_dir",
-                serde_json::json!({"DirectoryPath": "src"}),
-                "search-list",
-            ),
-            (
-                "grep_search",
-                serde_json::json!({"SearchPath": "src"}),
-                "search-list",
-            ),
-        ] {
-            let env = HookEnvelope::from_query_and_body(
-                HookQuery {
-                    event: "post-tool-use".into(),
-                    agent: Some("antigravity-cli".into()),
-                    ..Default::default()
-                },
-                serde_json::json!({
-                    "toolCall": {"name": tool, "args": args},
-                    "tool_response": "SENTINEL_CONTENT",
-                }),
-            );
-            let body = env.body_excerpt.unwrap();
-            assert!(
-                body.contains(&format!("tool_family: {family}")),
-                "tool: {tool}, body: {body}"
-            );
-            assert!(
-                body.contains("SENTINEL_CONTENT"),
-                "tool: {tool}, body: {body}"
-            );
-        }
-    }
-
-    #[test]
-    fn antigravity_edit_tools_capture_real_written_content() {
-        // Fixture shapes captured from a live antigravity-cli session. The hook
-        // never sends a top-level result; the written content lives in args.
-        let write_to_file = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "post-tool-use".into(),
-                agent: Some("antigravity-cli".into()),
-                ..Default::default()
-            },
-            serde_json::json!({
-                "toolCall": {
-                    "name": "write_to_file",
-                    "args": {
-                        "CodeContent": "# Scratch Test File 09\n\nLine 1: first line\n",
-                        "Description": "Temporary scratch file",
-                        "Overwrite": true,
-                        "TargetFile": "/repo/scratch-test-09.md"
-                    }
-                }
-            }),
-        );
-        let body = write_to_file.body_excerpt.unwrap();
-        assert!(body.contains("tool_family: file"));
-        assert!(body.contains("Scratch Test File 09"));
-
-        let replace_file_content = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "post-tool-use".into(),
-                agent: Some("antigravity-cli".into()),
-                ..Default::default()
-            },
-            serde_json::json!({
-                "toolCall": {
-                    "name": "replace_file_content",
-                    "args": {
-                        "TargetFile": "/repo/1-visao.md",
-                        "TargetContent": "old line",
-                        "ReplacementContent": "new line REPLACED_SENTINEL",
-                        "Instruction": "Add debug test comment"
-                    }
-                }
-            }),
-        );
-        let body = replace_file_content.body_excerpt.unwrap();
-        assert!(body.contains("tool_family: file"));
-        assert!(body.contains("REPLACED_SENTINEL"));
-
-        let multi_replace = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "post-tool-use".into(),
-                agent: Some("antigravity-cli".into()),
-                ..Default::default()
-            },
-            serde_json::json!({
-                "toolCall": {
-                    "name": "multi_replace_file_content",
-                    "args": {
-                        "TargetFile": "/repo/scratch-test-09.md",
-                        "Instruction": "Edit Line 1 and Line 4",
-                        "ReplacementChunks": [
-                            {
-                                "TargetContent": "Line 1: first line",
-                                "ReplacementContent": "Line 1: first line edited",
-                                "StartLine": 3,
-                                "EndLine": 3,
-                                "AllowMultiple": false
-                            },
-                            {
-                                "TargetContent": "Line 4: fourth line",
-                                "ReplacementContent": "Line 4: fourth line edited",
-                                "StartLine": 6,
-                                "EndLine": 6,
-                                "AllowMultiple": false
-                            }
-                        ]
-                    }
-                }
-            }),
-        );
-        let body = multi_replace.body_excerpt.unwrap();
-        assert!(body.contains("tool_family: file"));
-        assert!(body.contains("Line 1: first line edited"));
-        assert!(body.contains("Line 4: fourth line edited"));
-    }
-
-    #[test]
-    fn antigravity_failed_edit_prefers_error_over_attempted_content() {
-        let env = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "post-tool-use".into(),
-                agent: Some("antigravity-cli".into()),
-                ..Default::default()
-            },
-            serde_json::json!({
-                "error": "EDIT_FAILED_SENTINEL",
-                "toolCall": {
-                    "name": "replace_file_content",
-                    "args": {
-                        "TargetFile": "/repo/src/main.rs",
-                        "ReplacementContent": "CONTENT_WAS_NOT_WRITTEN"
-                    }
-                }
-            }),
-        );
-        let body = env.body_excerpt.unwrap();
-        assert!(body.contains("outcome: error"));
-        assert!(body.contains("EDIT_FAILED_SENTINEL"));
-        assert!(!body.contains("CONTENT_WAS_NOT_WRITTEN"));
-    }
-
-    #[test]
-    fn antigravity_generic_tools_and_unrelated_events_fail_closed() {
-        for tool in ["read_url_content", "read_resource", "call_mcp_tool"] {
-            let env = HookEnvelope::from_query_and_body(
-                HookQuery {
-                    event: "post-tool-use".into(),
-                    agent: Some("antigravity-cli".into()),
-                    ..Default::default()
-                },
-                serde_json::json!({
-                    "toolCall": {
-                        "name": tool,
-                        "args": {"message": "NESTED_ARGUMENT_SENTINEL"}
-                    },
-                    "tool_response": "UNPROVEN_OUTPUT_SENTINEL"
-                }),
-            );
-            assert_eq!(
-                env.body_excerpt.as_deref(),
-                Some("tool_family: unknown\noutcome: unknown")
-            );
-        }
-
-        let notification = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "notification".into(),
-                agent: Some("antigravity-cli".into()),
-                ..Default::default()
-            },
-            serde_json::json!({
-                "toolCall": {
-                    "args": {"message": "NESTED_ARGUMENT_SENTINEL"}
-                }
-            }),
-        );
-        assert!(notification.body_excerpt.is_none());
-    }
-
-    #[test]
-    fn antigravity_post_tool_use_extracts_output_txt_content() {
-        let dir = tempfile::tempdir().unwrap();
-        let step_dir = dir
-            .path()
-            .join(".system_generated")
-            .join("steps")
-            .join("42");
-        std::fs::create_dir_all(&step_dir).unwrap();
-        std::fs::write(step_dir.join("output.txt"), "cargo test: 10 passed\n").unwrap();
-
-        let env = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "post-tool-use".into(),
-                agent: Some("antigravity-cli".into()),
-                ..Default::default()
-            },
-            serde_json::json!({
-                "conversationId": "conv-1",
-                "toolCall": {
-                    "name": "run_command",
-                    "args": {"CommandLine": "cargo test"}
-                },
-                "stepIdx": 42,
-                "artifactDirectoryPath": dir.path().to_str().unwrap()
-            }),
-        );
-        let body = env.body_excerpt.expect("body excerpt should be present");
-        assert!(body.contains("tool_family: non-file"));
-        assert!(body.contains("cargo test: 10 passed"));
-    }
-
-    #[test]
-    fn antigravity_post_tool_use_preserves_edit_tool_code_content() {
-        let dir = tempfile::tempdir().unwrap();
-        let step_dir = dir.path().join(".system_generated").join("steps").join("1");
-        std::fs::create_dir_all(&step_dir).unwrap();
-        std::fs::write(step_dir.join("output.txt"), "Created file test.rs\n").unwrap();
-
-        let env = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "post-tool-use".into(),
-                agent: Some("antigravity-cli".into()),
-                ..Default::default()
-            },
-            serde_json::json!({
-                "conversationId": "conv-1",
-                "toolCall": {
-                    "name": "write_to_file",
-                    "args": {
-                        "TargetFile": "/workspace/test.rs",
-                        "CodeContent": "fn preserved_code() {}"
-                    }
-                },
-                "stepIdx": 1,
-                "artifactDirectoryPath": dir.path().to_str().unwrap()
-            }),
-        );
-        let body = env.body_excerpt.expect("body excerpt should be present");
-        assert!(body.contains("fn preserved_code() {}"));
-        assert!(!body.contains("Created file test.rs"));
-    }
-
-    #[test]
-    fn pi_and_omp_post_outcomes_and_stable_id_are_rendered() {
-        for agent in ["pi", "omp"] {
-            for (is_error, outcome) in [
-                (Some(false), "success"),
-                (Some(true), "error"),
-                (None, "unknown"),
-            ] {
-                let mut raw = serde_json::json!({"tool":"bash","args":{},"callID":"pi-stable-190","output":"result"});
-                if let Some(is_error) = is_error {
-                    raw["isError"] = serde_json::json!(is_error);
-                }
-                let pre = HookEnvelope::from_query_and_body(
-                    HookQuery {
-                        event: "pre-tool-use".into(),
-                        agent: Some(agent.into()),
-                        ..Default::default()
-                    },
-                    raw.clone(),
-                );
-                let post = HookEnvelope::from_query_and_body(
-                    HookQuery {
-                        event: "post-tool-use".into(),
-                        agent: Some(agent.into()),
-                        ..Default::default()
-                    },
-                    raw,
-                );
-                assert!(
-                    pre.body_excerpt
-                        .unwrap()
-                        .contains("tool_call_id: pi-stable-190")
-                );
-                let body = post.body_excerpt.unwrap();
-                assert!(body.contains("tool_call_id: pi-stable-190"));
-                assert!(
-                    body.contains(&format!("outcome: {outcome}")),
-                    "{agent}: {body}"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn omp_tool_events_keep_family_call_id_and_output_but_not_arguments() {
-        // `build_pi_extension` in the CLI derives the Pi extension from the OMP
-        // one, so OMP posts this exact tool payload shape.
-        let pre = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "pre-tool-use".into(),
-                agent: Some("omp".into()),
-                ..Default::default()
-            },
-            serde_json::json!({"tool":"bash","callID":"omp-1","args":{"command":"SENTINEL_COMMAND"}}),
-        );
-        assert_eq!(pre.title_hint.as_deref(), Some("tool non-file"));
-        assert_eq!(
-            pre.body_excerpt.as_deref(),
-            Some("tool_family: non-file\ntool_call_id: omp-1")
-        );
-
-        let post = HookEnvelope::from_query_and_body(
-            HookQuery {
-                event: "post-tool-use".into(),
-                agent: Some("omp".into()),
-                ..Default::default()
-            },
-            serde_json::json!({"tool":"bash","callID":"omp-1","args":{"command":"SENTINEL_COMMAND"},"output":"tests passed","details":{"diff":"SENTINEL_DETAILS"}}),
-        );
-        assert_eq!(post.title_hint.as_deref(), Some("tool non-file"));
-        assert_eq!(
-            post.body_excerpt.as_deref(),
-            Some("tool_family: non-file\ntool_call_id: omp-1\noutcome: unknown\n---\ntests passed")
-        );
     }
 }

@@ -1340,7 +1340,7 @@ async fn seed_session(
             id: session_id,
             workspace_id: ws,
             project_id: proj,
-            agent_kind: AgentKind::OpenCode,
+            agent_kind: AgentKind::Other,
             cwd: None,
             actor_user: None,
         })
@@ -1865,7 +1865,7 @@ async fn api_workspace_overview_includes_open_handoff() {
             workspace_id: ws,
             project_id: proj,
             from_session_id: None,
-            from_agent: AgentKind::ClaudeCode,
+            from_agent: AgentKind::Other,
             to_agent: None,
             cwd: None,
             summary: "handoff_summary_marker".into(),
@@ -1896,7 +1896,7 @@ async fn api_workspace_overview_includes_open_handoff() {
     assert_eq!(handoff["open_questions"][0], "open_question_marker");
     assert_eq!(handoff["next_steps"][0], "next_step_marker");
     assert_eq!(handoff["project"], "scratch");
-    assert_eq!(handoff["agent"], "claude-code");
+    assert_eq!(handoff["agent"], "other");
 }
 
 #[tokio::test]
@@ -1936,7 +1936,7 @@ async fn api_project_overview_aggregates_handoff_briefing_health() {
             workspace_id: ws,
             project_id: proj,
             from_session_id: None,
-            from_agent: AgentKind::ClaudeCode,
+            from_agent: AgentKind::Other,
             to_agent: None,
             cwd: None,
             summary: "scratch_handoff_marker".into(),
@@ -2026,7 +2026,7 @@ fn handoff_for(
         workspace_id: ws,
         project_id: proj,
         from_session_id: None,
-        from_agent: AgentKind::ClaudeCode,
+        from_agent: AgentKind::Other,
         to_agent: None,
         cwd: Some("/tmp/scratch".into()),
         summary: summary.into(),
@@ -2393,7 +2393,7 @@ async fn api_handoff_listing_withholds_body_from_unnamed_nonroot_caller() {
     // Metadata: still there, and the row itself is still listed — a legacy
     // unowned handoff stays visible to everyone.
     assert_eq!(entry["state"], "open");
-    assert_eq!(entry["agent"], "claude-code");
+    assert_eq!(entry["agent"], "other");
     assert_eq!(entry["cwd"], "/tmp/scratch");
     assert_eq!(entry["files_touched"][0], "alpha.md");
     assert_eq!(entry["redacted"], true);

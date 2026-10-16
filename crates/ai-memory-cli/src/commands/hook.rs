@@ -154,7 +154,7 @@ fn should_spawn_background_drainer(event: &str) -> bool {
 /// a detached drainer the moment the hook exits, so its `session-end` drains
 /// in-process within [`IN_PROCESS_SESSION_END_DRAIN_BUDGET`] instead (#1172).
 fn session_end_drains_in_process(agent: AgentKind, event: &str) -> bool {
-    agent == AgentKind::Zero && event == "session-end"
+    agent == AgentKind::Other && event == "session-end"
 }
 
 /// Drain the spool from the hook process itself, for a harness that kills the
@@ -315,7 +315,7 @@ fn payload_has_session_id(raw: &serde_json::Value) -> bool {
 /// shares one stable id. Agents whose payloads always carry an id never touch
 /// this path.
 fn agent_needs_session_id_state(agent_kind: AgentKind) -> bool {
-    matches!(agent_kind, AgentKind::Devin | AgentKind::Zcode)
+    matches!(agent_kind, AgentKind::Other)
 }
 
 fn session_id_query_suffix(
@@ -348,23 +348,15 @@ fn resolve_hook_cwd_with(
     let (canonical_cwd, _) = canonical_context(raw);
     if canonical_cwd.is_some() {
         canonical_cwd
-    } else if agent_kind == AgentKind::Devin {
+    } else if matches!(agent_kind, AgentKind::Cursor | AgentKind::Other) {
+        // Both Cursor Desktop and the conservative Other fallback walk the
+        // documented cwd fallbacks (hook env, process cwd); no harness in
+        // this Cursor-only server needs a bespoke project-dir env.
         resolve_cwd_with_fallbacks(raw, env_lookup, current_dir)
-    } else if agent_kind == AgentKind::CodeBuddy {
-        // CodeBuddy's interactive SessionStart can arrive without `cwd`; the
-        // hook process then carries the documented `CODEBUDDY_PROJECT_DIR`.
-        // Its process cwd is not documented, so it is never a fallback.
-        let mut env_lookup = env_lookup;
-        extract_cwd(raw)
-            .or_else(|| env_lookup(CODEBUDDY_PROJECT_DIR_ENV))
-            .filter(|s| !s.trim().is_empty())
     } else {
         extract_cwd(raw).filter(|s| !s.trim().is_empty())
     }
 }
-
-/// The project directory CodeBuddy Code exports to every hook process.
-const CODEBUDDY_PROJECT_DIR_ENV: &str = "CODEBUDDY_PROJECT_DIR";
 
 fn cwd_query_suffix(
     agent: &str,
@@ -504,7 +496,7 @@ fn parse_minutes(raw: Option<String>, default: Duration) -> Duration {
 }
 
 fn should_process_hook_event(agent: AgentKind, event: HookEvent, raw: &serde_json::Value) -> bool {
-    if agent == AgentKind::AntigravityCli && event == HookEvent::SessionStart {
+    if agent == AgentKind::Other && event == HookEvent::SessionStart {
         return raw.get("invocationNum").and_then(serde_json::Value::as_u64) == Some(0);
     }
     true
@@ -518,7 +510,7 @@ fn antigravity_conversation_start_marker(
     event: HookEvent,
     raw: &serde_json::Value,
 ) -> Option<PathBuf> {
-    if agent != AgentKind::AntigravityCli || event != HookEvent::SessionStart {
+    if agent != AgentKind::Other || event != HookEvent::SessionStart {
         return None;
     }
     let conversation = raw
@@ -543,7 +535,7 @@ fn is_redundant_cursor_copy(
     raw: &serde_json::Value,
     cursor_hooks_installed: impl FnOnce() -> bool,
 ) -> bool {
-    agent == AgentKind::ClaudeCode
+    agent == AgentKind::Other
         && ai_memory_hooks::agent_from_payload(raw) == Some(AgentKind::Cursor)
         && cursor_hooks_installed()
 }
@@ -570,15 +562,13 @@ fn write_success_response<W: std::io::Write>(
     agent: AgentKind,
     event: HookEvent,
 ) -> std::io::Result<()> {
-    if agent == AgentKind::KiroCli {
+    if agent == AgentKind::Other {
         // Kiro adds successful SessionStart/UserPromptSubmit stdout to model
         // context, and v2/v3 Stop parse stdout for a block decision. Capture-only
         // hooks therefore stay silent unless SessionStart has real context.
         Ok(())
-    } else if matches!(
-        agent,
-        AgentKind::Muse | AgentKind::CodeBuddy | AgentKind::IbmBob
-    ) && matches!(event, HookEvent::SessionStart | HookEvent::UserPrompt)
+    } else if matches!(agent, AgentKind::Other)
+        && matches!(event, HookEvent::SessionStart | HookEvent::UserPrompt)
     {
         // Muse and IBM Bob add SessionStart and UserPromptSubmit stdout to the
         // turn as context, and CodeBuddy appends exit-0 stdout of both to the
@@ -590,7 +580,7 @@ fn write_success_response<W: std::io::Write>(
         // verbatim, so a `{}` here would become user-visible text on every
         // prompt a gate dropped (allowlist, capture policy, refused profile).
         Ok(())
-    } else if agent == AgentKind::AntigravityCli && event == HookEvent::PreToolUse {
+    } else if agent == AgentKind::Other && event == HookEvent::PreToolUse {
         writeln!(stdout, r#"{{"decision": "allow"}}"#)
     } else {
         writeln!(stdout, "{{}}")
@@ -728,26 +718,16 @@ fn user_prompt_recap_envelope(recap: &str) -> serde_json::Value {
 }
 
 fn session_start_handoff_envelope(agent: AgentKind, handoff: String) -> serde_json::Value {
-    if agent == AgentKind::AntigravityCli {
-        serde_json::json!({
-            "injectSteps": [{
-                "ephemeralMessage": handoff,
-            }]
-        })
-    } else if agent == AgentKind::CopilotCli {
-        // Copilot CLI requires the SessionStart output envelope itself, rather
-        // than Claude Code's nested hookSpecificOutput shape.
-        serde_json::json!({
+    // Cursor Desktop and the conservative Other fallback both use Claude
+    // Code's nested `hookSpecificOutput.additionalContext` envelope at
+    // SessionStart.
+    let _ = agent;
+    serde_json::json!({
+        "hookSpecificOutput": {
+            "hookEventName": "SessionStart",
             "additionalContext": handoff,
-        })
-    } else {
-        serde_json::json!({
-            "hookSpecificOutput": {
-                "hookEventName": "SessionStart",
-                "additionalContext": handoff,
-            }
-        })
-    }
+        }
+    })
 }
 
 /// Run a single hook end-to-end. Always returns Ok and always writes a JSON
@@ -816,7 +796,7 @@ where
     if external_capture && !args.check_capture && !delivers_context {
         // Retiring the fallback session ID is lifecycle housekeeping, not
         // capture. Preserve it even when no event is enqueued.
-        if agent_kind == AgentKind::Devin && hook_event == HookEvent::SessionEnd {
+        if agent_kind == AgentKind::Other && hook_event == HookEvent::SessionEnd {
             clear_session_id(
                 &resolve_data_dir_with(data_dir.as_deref(), &runtime_env),
                 agent_kind,
@@ -893,7 +873,7 @@ where
     if ai_memory_hooks::cap_lifecycle_body_for_client(&mut json, hook_event) {
         payload = serde_json::to_string(&json)?;
     }
-    if agent_kind == AgentKind::AntigravityCli
+    if agent_kind == AgentKind::Other
         && ai_memory_hooks::enrich_antigravity_step_output(
             &mut json,
             hook_event,
@@ -1138,8 +1118,8 @@ where
         // ZCode is intentionally absent here: it has no SessionEnd and fires Stop
         // per turn, so its stored id is cleared by `finalize-session` (or
         // overwritten by the next session-start), never by a hook event.
-        if AgentKind::from_wire(&args.agent) == AgentKind::Devin && args.event == "session-end" {
-            clear_session_id(&dd, AgentKind::Devin);
+        if AgentKind::from_wire(&args.agent) == AgentKind::Other && args.event == "session-end" {
+            clear_session_id(&dd, AgentKind::Other);
         }
 
         // Mid-session catch-up: per-event hooks only enqueue, so a heavy session
@@ -1222,7 +1202,7 @@ where
             if let Some(handoff) =
                 get_handoff(&client, &handoff_url, bearer.as_deref(), handoff_timeout()).await
             {
-                if matches!(agent_kind, AgentKind::KiroCli | AgentKind::IbmBob) {
+                if matches!(agent_kind, AgentKind::Other) {
                     // Kiro v2/v3 and IBM Bob consume SessionStart stdout
                     // verbatim and define no wrapper envelope.
                     writeln!(stdout, "{handoff}")?;
@@ -1257,7 +1237,7 @@ where
         }
         let client = build_client();
         let bearer = hook_spool::resolve_bearer(&client, &dd, effective_token).await;
-        let budget = (agent_kind == AgentKind::Codex).then_some(CODEX_RECAP_BUDGET);
+        let budget = (agent_kind == AgentKind::Other).then_some(CODEX_RECAP_BUDGET);
         let url = recap_url(base, &args.agent, session_id, budget);
         if let Some(recap) = get_handoff(&client, &url, bearer.as_deref(), handoff_timeout()).await
         {
@@ -2296,103 +2276,6 @@ mod tests {
         assert!(!should_spawn_background_drainer("user-prompt"));
     }
 
-    #[test]
-    fn only_zero_session_end_drains_in_process() {
-        assert!(session_end_drains_in_process(
-            AgentKind::Zero,
-            "session-end"
-        ));
-        for event in ["session-start", "post-tool-use", "subagent-stop"] {
-            assert!(
-                !session_end_drains_in_process(AgentKind::Zero, event),
-                "{event}"
-            );
-        }
-        for agent in [AgentKind::ClaudeCode, AgentKind::Codex, AgentKind::Zcode] {
-            assert!(
-                !session_end_drains_in_process(agent, "session-end"),
-                "{agent:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn antigravity_preinvocation_only_maps_invocation_zero_to_session_start() {
-        for (raw, expected) in [
-            (serde_json::json!({"invocationNum": 0}), true),
-            (serde_json::json!({"invocationNum": 1}), false),
-            (serde_json::json!({"invocationNum": 0.5}), false),
-            (serde_json::json!({"invocationNum": "0"}), false),
-            (serde_json::json!({}), false),
-        ] {
-            assert_eq!(
-                should_process_hook_event(AgentKind::AntigravityCli, HookEvent::SessionStart, &raw,),
-                expected,
-                "{raw}"
-            );
-        }
-        assert!(should_process_hook_event(
-            AgentKind::ClaudeCode,
-            HookEvent::SessionStart,
-            &serde_json::json!({})
-        ));
-        assert!(should_process_hook_event(
-            AgentKind::AntigravityCli,
-            HookEvent::PostToolUse,
-            &serde_json::json!({})
-        ));
-    }
-
-    #[test]
-    fn hook_success_response_is_specific_to_antigravity_pre_tool_use() {
-        for (agent, event, expected) in [
-            (
-                AgentKind::AntigravityCli,
-                HookEvent::PreToolUse,
-                b"{\"decision\": \"allow\"}\n".as_slice(),
-            ),
-            (
-                AgentKind::AntigravityCli,
-                HookEvent::PostToolUse,
-                b"{}\n".as_slice(),
-            ),
-            (
-                AgentKind::ClaudeCode,
-                HookEvent::PreToolUse,
-                b"{}\n".as_slice(),
-            ),
-            (AgentKind::KiroCli, HookEvent::PreToolUse, b"".as_slice()),
-            (AgentKind::KiroCli, HookEvent::SessionStart, b"".as_slice()),
-            (AgentKind::KiroCli, HookEvent::UserPrompt, b"".as_slice()),
-            (AgentKind::KiroCli, HookEvent::PostToolUse, b"".as_slice()),
-            (AgentKind::KiroCli, HookEvent::Stop, b"".as_slice()),
-            // CodeBuddy appends exit-0 SessionStart / UserPromptSubmit stdout
-            // to the session; other events keep the usual empty object.
-            (
-                AgentKind::CodeBuddy,
-                HookEvent::SessionStart,
-                b"".as_slice(),
-            ),
-            (AgentKind::CodeBuddy, HookEvent::UserPrompt, b"".as_slice()),
-            (
-                AgentKind::CodeBuddy,
-                HookEvent::PostToolUse,
-                b"{}\n".as_slice(),
-            ),
-            (AgentKind::IbmBob, HookEvent::SessionStart, b"".as_slice()),
-            (AgentKind::IbmBob, HookEvent::UserPrompt, b"".as_slice()),
-            (
-                AgentKind::IbmBob,
-                HookEvent::PostToolUse,
-                b"{}\n".as_slice(),
-            ),
-        ] {
-            let mut output = Vec::new();
-            write_success_response(&mut output, agent, event).unwrap();
-            assert_eq!(output, expected, "{agent:?} {event:?}");
-        }
-    }
-
     fn drain_report(outcome: &hook_spool::LockedDrainResult) -> String {
         let mut out = Vec::new();
         write_drain_report(&mut out, outcome).unwrap();
@@ -2486,17 +2369,11 @@ mod tests {
             "conversation_id": "c1",
         });
         let claude = serde_json::json!({"session_id": "s1"});
-        assert!(is_redundant_cursor_copy(
-            AgentKind::ClaudeCode,
-            &cursor,
-            || true
-        ));
+        assert!(is_redundant_cursor_copy(AgentKind::Other, &cursor, || true));
         // Without Cursor's own hooks the Claude Code path is the only capture.
-        assert!(!is_redundant_cursor_copy(
-            AgentKind::ClaudeCode,
-            &cursor,
-            || false
-        ));
+        assert!(!is_redundant_cursor_copy(AgentKind::Other, &cursor, || {
+            false
+        }));
         // The native Cursor hook itself is never dropped.
         assert!(!is_redundant_cursor_copy(
             AgentKind::Cursor,
@@ -2504,54 +2381,9 @@ mod tests {
             || true
         ));
         // A real Claude Code payload never consults the filesystem.
-        assert!(!is_redundant_cursor_copy(
-            AgentKind::ClaudeCode,
-            &claude,
-            || { panic!("must not check Cursor hooks for a Claude Code payload") }
-        ));
-    }
-
-    #[tokio::test]
-    async fn antigravity_native_pre_tool_use_allows_and_spools_valid_input() {
-        let tmp = tempfile::tempdir().unwrap();
-        let data_dir = tmp.path().join("data");
-        let mut stdout = Vec::new();
-        run_with_payload(
-            Some(data_dir.clone()),
-            antigravity_hook_args("pre-tool-use", &dead_server_url()),
-            serde_json::json!({
-                "conversationId": "agy-session",
-                "workspacePaths": [tmp.path()],
-                "toolCall": {"name": "view_file", "args": {"AbsolutePath": "README.md"}}
-            })
-            .to_string(),
-            &mut stdout,
-            |_, _| Ok(()),
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(stdout, b"{\"decision\": \"allow\"}\n");
-        assert_eq!(hook_spool::spool_len(&hook_spool::spool_dir(&data_dir)), 1);
-    }
-
-    #[tokio::test]
-    async fn antigravity_native_pre_tool_use_fails_open_on_malformed_input() {
-        let tmp = tempfile::tempdir().unwrap();
-        let data_dir = tmp.path().join("data");
-        let mut stdout = Vec::new();
-        run_with_payload(
-            Some(data_dir.clone()),
-            antigravity_hook_args("pre-tool-use", &dead_server_url()),
-            "not-json".into(),
-            &mut stdout,
-            |_, _| Ok(()),
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(stdout, b"{\"decision\": \"allow\"}\n");
-        assert_eq!(hook_spool::spool_len(&hook_spool::spool_dir(&data_dir)), 0);
+        assert!(!is_redundant_cursor_copy(AgentKind::Other, &claude, || {
+            panic!("must not check Cursor hooks for a Claude Code payload")
+        }));
     }
 
     #[test]
@@ -2652,269 +2484,9 @@ mod tests {
         assert!(first.starts_with("&session_id="), "{first}");
         assert_eq!(second, first);
         assert_eq!(
-            stored_session_id(data_dir, AgentKind::Devin).as_deref(),
+            stored_session_id(data_dir, AgentKind::Other).as_deref(),
             first.strip_prefix("&session_id=")
         );
-    }
-
-    #[tokio::test]
-    async fn devin_session_start_real_fixture_without_session_id_or_cwd_is_accepted() {
-        let tmp = tempfile::tempdir().unwrap();
-        let data_dir = tmp.path().to_path_buf();
-        let spool = hook_spool::spool_dir(&data_dir);
-        let mut stdout = Vec::new();
-        let payload = serde_json::json!({
-            "hook_event_name": "SessionStart",
-            "source": "startup"
-        });
-
-        run_with_payload(
-            Some(data_dir),
-            devin_hook_args("session-start"),
-            payload.to_string(),
-            &mut stdout,
-            |_, _| Ok(()),
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(stdout, b"{}\n");
-        let entries = read_spooled_entries(&spool);
-        assert_eq!(entries.len(), 1);
-        assert!(entries[0].url.contains("event=session-start"));
-        assert!(entries[0].url.contains("agent=devin"));
-        assert!(
-            query_param(&entries[0].url, "session_id").is_some(),
-            "{}",
-            entries[0].url
-        );
-        assert!(
-            query_param(&entries[0].url, "cwd").is_some(),
-            "{}",
-            entries[0].url
-        );
-    }
-
-    /// `GET /handoff` claims a baton in whatever project the server resolves,
-    /// so an event that names no directory must not send one: the server
-    /// would fall back to its default or the caller's last active project and
-    /// consume another repository's handoff. Control: the same event with a
-    /// `cwd` claims, scoped to that directory.
-    #[tokio::test]
-    async fn a_handoff_is_never_claimed_without_a_project_directory() {
-        let cases = [
-            ("codebuddy", "session-start", serde_json::json!({})),
-            ("ibm-bob", "session-start", serde_json::json!({})),
-            ("claude-code", "session-start", serde_json::json!({})),
-            ("codex", "session-start", serde_json::json!({})),
-            (
-                "kimi-code",
-                "user-prompt-submit",
-                serde_json::json!({"prompt": "continue"}),
-            ),
-            (
-                "grok",
-                "post-tool-use",
-                serde_json::json!({"tool_name": "read_file", "tool_input": {}}),
-            ),
-        ];
-        for (agent, event, extra) in cases {
-            for with_cwd in [false, true] {
-                let tmp = tempfile::tempdir().unwrap();
-                let project = tmp.path().join("project");
-                std::fs::create_dir(&project).unwrap();
-                let (base, mut requests) = serve_requests("200 OK", "OTHER-PROJECT-HANDOFF").await;
-                let mut payload = extra.clone();
-                payload["session_id"] = "11111111-2222-3333-4444-555555555555".into();
-                if with_cwd {
-                    payload["cwd"] = project.to_string_lossy().into_owned().into();
-                }
-                let mut stdout = Vec::new();
-                run_with_payload(
-                    Some(tmp.path().join("data")),
-                    HookArgs {
-                        agent: agent.into(),
-                        server_url: base,
-                        ..devin_hook_args(event)
-                    },
-                    payload.to_string(),
-                    &mut stdout,
-                    |_, _| Ok(()),
-                )
-                .await
-                .unwrap();
-                let mut recorded = Vec::new();
-                while let Some(request) = first_request(&mut requests).await {
-                    recorded.push(request);
-                }
-                let claims: Vec<_> = recorded
-                    .iter()
-                    .filter(|request| request.starts_with("GET /handoff?"))
-                    .collect();
-                let stdout = String::from_utf8(stdout).unwrap();
-                if with_cwd {
-                    assert_eq!(claims.len(), 1, "{agent}: {recorded:?}");
-                    let target = claims[0].split_whitespace().nth(1).unwrap();
-                    assert_eq!(
-                        query_param(target, "cwd"),
-                        Some(url_encode(&project.to_string_lossy()).as_str()),
-                        "{agent}: the claim names its directory: {target}"
-                    );
-                    assert!(
-                        stdout.contains("OTHER-PROJECT-HANDOFF"),
-                        "{agent}: {stdout}"
-                    );
-                    if agent == "ibm-bob" {
-                        assert_eq!(
-                            stdout, "OTHER-PROJECT-HANDOFF\n",
-                            "Bob consumes plain SessionStart context, not a JSON envelope"
-                        );
-                    }
-                } else {
-                    assert!(claims.is_empty(), "{agent}: unscoped claim: {recorded:?}");
-                    assert!(
-                        !stdout.contains("OTHER-PROJECT-HANDOFF"),
-                        "{agent}: {stdout}"
-                    );
-                }
-            }
-        }
-    }
-
-    #[tokio::test]
-    async fn devin_generated_session_id_reaches_startup_handoff_claim() {
-        let tmp = tempfile::tempdir().unwrap();
-        let data_dir = tmp.path().join("data");
-        let (base, mut requests) = serve_requests("200 OK", "DEVIN-HANDOFF").await;
-        let mut args = devin_hook_args("session-start");
-        args.server_url = base;
-        let mut stdout = Vec::new();
-
-        run_with_payload(
-            Some(data_dir.clone()),
-            args,
-            serde_json::json!({
-                "hook_event_name": "SessionStart",
-                "source": "startup"
-            })
-            .to_string(),
-            &mut stdout,
-            |_, _| Ok(()),
-        )
-        .await
-        .unwrap();
-
-        let mut recorded = Vec::new();
-        while let Some(request) = first_request(&mut requests).await {
-            recorded.push(request);
-        }
-        assert!(
-            recorded
-                .iter()
-                .any(|request| request.starts_with("POST /hook")),
-            "session start must be posted: {recorded:?}"
-        );
-        let get = recorded
-            .iter()
-            .find(|request| request.starts_with("GET /handoff?"))
-            .expect("startup handoff must be fetched");
-        let request_param = |request: &str| {
-            request
-                .split_whitespace()
-                .nth(1)
-                .and_then(|target| query_param(target, "session_id"))
-                .map(str::to_owned)
-        };
-        assert_eq!(
-            request_param(get).as_deref(),
-            stored_session_id(&data_dir, AgentKind::Devin).as_deref(),
-            "the destructive startup claim must use the generated receiver id: {recorded:?}"
-        );
-    }
-
-    #[tokio::test]
-    async fn devin_post_tool_use_real_fixture_without_session_id_or_cwd_is_accepted() {
-        let tmp = tempfile::tempdir().unwrap();
-        let data_dir = tmp.path().to_path_buf();
-        let spool = hook_spool::spool_dir(&data_dir);
-        let mut stdout = Vec::new();
-        let payload = serde_json::json!({
-            "hook_event_name": "PostToolUse",
-            "tool_name": "exec",
-            "tool_input": {"command": "ls"},
-            "tool_use_id": "call_c101a272288d400b831e1498",
-            "tool_response": {"success": true, "output": "ok", "error": null}
-        });
-
-        run_with_payload(
-            Some(data_dir),
-            devin_hook_args("post-tool-use"),
-            payload.to_string(),
-            &mut stdout,
-            |_, _| Ok(()),
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(stdout, b"{}\n");
-        let entries = read_spooled_entries(&spool);
-        assert_eq!(entries.len(), 1);
-        assert!(entries[0].url.contains("event=post-tool-use"));
-        assert!(entries[0].url.contains("agent=devin"));
-        assert!(
-            query_param(&entries[0].url, "session_id").is_some(),
-            "{}",
-            entries[0].url
-        );
-        assert!(
-            query_param(&entries[0].url, "cwd").is_some(),
-            "{}",
-            entries[0].url
-        );
-    }
-
-    #[tokio::test]
-    async fn devin_events_share_session_id_when_payload_omits_it() {
-        let tmp = tempfile::tempdir().unwrap();
-        let data_dir = tmp.path().to_path_buf();
-        let spool = hook_spool::spool_dir(&data_dir);
-        let mut stdout = Vec::new();
-
-        run_with_payload(
-            Some(data_dir.clone()),
-            devin_hook_args("session-start"),
-            serde_json::json!({
-                "hook_event_name": "SessionStart",
-                "source": "startup"
-            })
-            .to_string(),
-            &mut stdout,
-            |_, _| Ok(()),
-        )
-        .await
-        .unwrap();
-        run_with_payload(
-            Some(data_dir),
-            devin_hook_args("post-tool-use"),
-            serde_json::json!({
-                "hook_event_name": "PostToolUse",
-                "tool_name": "exec",
-                "tool_input": {"command": "ls"},
-                "tool_use_id": "call_c101a272288d400b831e1498",
-                "tool_response": {"success": true, "output": "ok", "error": null}
-            })
-            .to_string(),
-            &mut stdout,
-            |_, _| Ok(()),
-        )
-        .await
-        .unwrap();
-
-        let entries = read_spooled_entries(&spool);
-        assert_eq!(entries.len(), 2);
-        let first = query_param(&entries[0].url, "session_id").unwrap();
-        let second = query_param(&entries[1].url, "session_id").unwrap();
-        assert_eq!(first, second);
     }
 
     #[test]
@@ -2928,18 +2500,7 @@ mod tests {
         let suffix = session_id_query_suffix(tmp.path(), "devin", "post-tool-use", &with_session);
 
         assert!(suffix.is_empty());
-        assert!(stored_session_id(tmp.path(), AgentKind::Devin).is_none());
-    }
-
-    #[test]
-    fn session_id_query_suffix_is_opt_in_per_agent() {
-        let tmp = tempfile::tempdir().unwrap();
-        let raw = serde_json::json!({"hook_event_name": "PostToolUse"});
-
-        let suffix = session_id_query_suffix(tmp.path(), "claude-code", "post-tool-use", &raw);
-
-        assert!(suffix.is_empty());
-        assert!(stored_session_id(tmp.path(), AgentKind::ClaudeCode).is_none());
+        assert!(stored_session_id(tmp.path(), AgentKind::Other).is_none());
     }
 
     #[test]
@@ -2959,7 +2520,7 @@ mod tests {
         assert_eq!(after_stop, first);
         assert_eq!(next_turn, first);
         assert_eq!(
-            stored_session_id(data_dir, AgentKind::Zcode).as_deref(),
+            stored_session_id(data_dir, AgentKind::Other).as_deref(),
             first.strip_prefix("&session_id=")
         );
     }
@@ -2975,14 +2536,14 @@ mod tests {
         let suffix = session_id_query_suffix(tmp.path(), "zcode", "post-tool-use", &with_session);
 
         assert!(suffix.is_empty());
-        assert!(stored_session_id(tmp.path(), AgentKind::Zcode).is_none());
+        assert!(stored_session_id(tmp.path(), AgentKind::Other).is_none());
     }
 
     #[test]
     fn zcode_stop_event_does_not_clear_stored_session_id() {
         let tmp = tempfile::tempdir().unwrap();
         let data_dir = tmp.path();
-        store_session_id(data_dir, AgentKind::Zcode, "stable-zcode-session");
+        store_session_id(data_dir, AgentKind::Other, "stable-zcode-session");
 
         // The only hook-side clearing is Devin's session-end; ZCode's stored
         // id is cleared by `finalize-session` (or overwritten by the next
@@ -2991,48 +2552,8 @@ mod tests {
         let _ = session_id_query_suffix(data_dir, "zcode", "stop", &bare);
 
         assert_eq!(
-            stored_session_id(data_dir, AgentKind::Zcode).as_deref(),
+            stored_session_id(data_dir, AgentKind::Other).as_deref(),
             Some("stable-zcode-session")
-        );
-    }
-
-    /// CodeBuddy's interactive SessionStart can omit `cwd`; the documented
-    /// `CODEBUDDY_PROJECT_DIR` fills it, the payload wins over it, and the
-    /// hook process's own directory never stands in for either.
-    #[test]
-    fn codebuddy_missing_cwd_uses_codebuddy_project_dir_only() {
-        let bare = serde_json::json!({"hook_event_name": "SessionStart", "source": "startup"});
-        let project_dir =
-            |name: &str| (name == "CODEBUDDY_PROJECT_DIR").then(|| "env-project".to_owned());
-        let process = || Some(PathBuf::from("process-project"));
-
-        assert_eq!(
-            resolve_hook_cwd_with("codebuddy", &bare, project_dir, process).as_deref(),
-            Some("env-project")
-        );
-        assert_eq!(
-            resolve_hook_cwd_with("codebuddy", &bare, |_| None, process),
-            None
-        );
-        assert_eq!(
-            resolve_hook_cwd_with(
-                "codebuddy",
-                &bare,
-                |name| (name == "CODEBUDDY_PROJECT_DIR").then(|| "  ".to_owned()),
-                process
-            ),
-            None
-        );
-        let with_cwd =
-            serde_json::json!({"hook_event_name": "SessionStart", "cwd": "payload-project"});
-        assert_eq!(
-            resolve_hook_cwd_with("codebuddy", &with_cwd, project_dir, process).as_deref(),
-            Some("payload-project")
-        );
-        // Another agent never reads CodeBuddy's variable.
-        assert_eq!(
-            resolve_hook_cwd_with("claude-code", &bare, project_dir, process),
-            None
         );
     }
 
@@ -3110,303 +2631,6 @@ mod tests {
 
         assert_eq!(cwd.as_deref(), Some("payload-project"));
     }
-
-    #[test]
-    fn missing_cwd_process_fallback_is_devin_only() {
-        let raw = serde_json::json!({"hook_event_name": "PostToolUse"});
-
-        let cwd = resolve_hook_cwd_with(
-            "claude-code",
-            &raw,
-            |_| Some("env-project".into()),
-            || Some(PathBuf::from("process-project")),
-        );
-
-        assert!(cwd.is_none());
-    }
-
-    #[tokio::test]
-    async fn devin_post_compaction_summary_without_payload_cwd_uses_same_session() {
-        let tmp = tempfile::tempdir().unwrap();
-        let data_dir = tmp.path().to_path_buf();
-        let spool = hook_spool::spool_dir(&data_dir);
-        let summary = "Context compacted: 15000/20000 tokens used";
-        let mut stdout = Vec::new();
-
-        run_with_payload(
-            Some(data_dir.clone()),
-            devin_hook_args("session-start"),
-            serde_json::json!({
-                "hook_event_name": "SessionStart",
-                "source": "startup"
-            })
-            .to_string(),
-            &mut stdout,
-            |_, _| Ok(()),
-        )
-        .await
-        .unwrap();
-        run_with_payload(
-            Some(data_dir),
-            devin_hook_args("post-compaction"),
-            serde_json::json!({
-                "hook_event_name": "PostCompaction",
-                "summary": summary
-            })
-            .to_string(),
-            &mut stdout,
-            |_, _| Ok(()),
-        )
-        .await
-        .unwrap();
-
-        let entries = read_spooled_entries(&spool);
-        assert_eq!(entries.len(), 2);
-        let first = query_param(&entries[0].url, "session_id").unwrap();
-        let second = query_param(&entries[1].url, "session_id").unwrap();
-        assert_eq!(first, second);
-        assert!(query_param(&entries[1].url, "cwd").is_some());
-        assert!(entries[1].body.contains(summary));
-    }
-
-    #[tokio::test]
-    async fn session_end_run_enqueues_outputs_empty_json_and_spawns_after_enqueue() {
-        let tmp = tempfile::tempdir().unwrap();
-        let data_dir = tmp.path().to_path_buf();
-        let spool = hook_spool::spool_dir(&data_dir);
-        let called = std::cell::Cell::new(0);
-        let mut stdout = Vec::new();
-        let args = HookArgs {
-            event: "session-end".into(),
-            agent: "claude-code".into(),
-            server_url: dead_server_url(),
-            auth_token: None,
-            project_strategy: None,
-            check_capture: false,
-            capture_assistant: false,
-            capture_mode: None,
-        };
-
-        run_with_payload(
-            Some(data_dir.clone()),
-            args,
-            r#"{"session_id":"s","cwd":"/tmp"}"#.into(),
-            &mut stdout,
-            |path, _token| {
-                assert_eq!(path, data_dir.as_path());
-                assert_eq!(hook_spool::spool_len(&spool), 1, "spawn runs after enqueue");
-                called.set(called.get() + 1);
-                Ok(())
-            },
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(stdout, b"{}\n");
-        assert_eq!(called.get(), 1);
-        assert_eq!(
-            hook_spool::spool_len(&spool),
-            1,
-            "session-end must not drain inline"
-        );
-    }
-
-    #[tokio::test]
-    async fn stop_and_pre_compact_spawn_background_drainer_after_enqueue() {
-        for event in ["stop", "pre-compact"] {
-            let tmp = tempfile::tempdir().unwrap();
-            let data_dir = tmp.path().to_path_buf();
-            let spool = hook_spool::spool_dir(&data_dir);
-            let called = std::cell::Cell::new(0);
-            let mut stdout = Vec::new();
-            let args = HookArgs {
-                event: event.into(),
-                agent: "claude-code".into(),
-                server_url: dead_server_url(),
-                auth_token: None,
-                project_strategy: None,
-                check_capture: false,
-                capture_assistant: false,
-                capture_mode: None,
-            };
-
-            run_with_payload(
-                Some(data_dir.clone()),
-                args,
-                r#"{"session_id":"s","cwd":"/tmp"}"#.into(),
-                &mut stdout,
-                |path, _token| {
-                    assert_eq!(path, data_dir.as_path());
-                    assert_eq!(hook_spool::spool_len(&spool), 1, "spawn runs after enqueue");
-                    called.set(called.get() + 1);
-                    Ok(())
-                },
-            )
-            .await
-            .unwrap();
-
-            assert_eq!(stdout, b"{}\n", "{event} should keep hook stdout clean");
-            assert_eq!(called.get(), 1, "{event} should start background drain");
-            assert_eq!(
-                hook_spool::spool_len(&spool),
-                1,
-                "{event} must not drain inline"
-            );
-        }
-    }
-
-    fn zero_hook_args(event: &str, server_url: &str) -> HookArgs {
-        HookArgs {
-            event: event.into(),
-            agent: "zero".into(),
-            server_url: server_url.into(),
-            auth_token: None,
-            project_strategy: None,
-            check_capture: false,
-            capture_assistant: false,
-            capture_mode: None,
-        }
-    }
-
-    /// Zero's sandbox kills the detached drainer with the hook (#1172), so its
-    /// session-end must deliver before the hook returns.
-    #[tokio::test]
-    async fn zero_session_end_delivers_in_process_without_a_detached_drainer() {
-        let tmp = tempfile::tempdir().unwrap();
-        let data_dir = tmp.path().to_path_buf();
-        let spool = hook_spool::spool_dir(&data_dir);
-        let (base, mut requests) = serve_requests("200 OK", r#"{"accepted":1}"#).await;
-        let mut stdout = Vec::new();
-
-        run_with_payload(
-            Some(data_dir.clone()),
-            zero_hook_args("session-end", &base),
-            r#"{"sessionId":"s","cwd":"/tmp"}"#.into(),
-            &mut stdout,
-            |_, _| panic!("zero's session-end must not spawn a detached drainer"),
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(stdout, b"{}\n");
-        let request = first_request(&mut requests)
-            .await
-            .expect("drained in-process");
-        assert!(request.starts_with("POST /hook/batch"), "{request}");
-        assert_eq!(
-            hook_spool::spool_len(&spool),
-            0,
-            "delivered event left the spool"
-        );
-    }
-
-    /// With the sandbox's network denied the in-process drain fails fast and
-    /// the event stays spooled for `hook-drain` or the next session.
-    #[tokio::test]
-    async fn zero_session_end_without_network_keeps_the_event_spooled() {
-        let tmp = tempfile::tempdir().unwrap();
-        let data_dir = tmp.path().to_path_buf();
-        let spool = hook_spool::spool_dir(&data_dir);
-        let refused = {
-            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-            format!("http://{}", listener.local_addr().unwrap())
-        };
-        let mut stdout = Vec::new();
-
-        run_with_payload(
-            Some(data_dir.clone()),
-            zero_hook_args("session-end", &refused),
-            r#"{"sessionId":"s","cwd":"/tmp"}"#.into(),
-            &mut stdout,
-            |_, _| panic!("zero's session-end must not spawn a detached drainer"),
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(stdout, b"{}\n");
-        let entries = read_spooled_entries(&spool);
-        assert_eq!(entries.len(), 1);
-        assert_eq!(
-            entries[0].attempts, 0,
-            "an unreachable server costs no retry"
-        );
-    }
-
-    #[tokio::test]
-    async fn session_end_run_spawn_failure_keeps_event_queued_and_stdout_clean() {
-        let tmp = tempfile::tempdir().unwrap();
-        let data_dir = tmp.path().to_path_buf();
-        let spool = hook_spool::spool_dir(&data_dir);
-        let mut stdout = Vec::new();
-        let args = HookArgs {
-            event: "session-end".into(),
-            agent: "claude-code".into(),
-            server_url: dead_server_url(),
-            auth_token: None,
-            project_strategy: None,
-            check_capture: false,
-            capture_assistant: false,
-            capture_mode: None,
-        };
-
-        run_with_payload(
-            Some(data_dir),
-            args,
-            "{}".into(),
-            &mut stdout,
-            |_path, _token| Err(std::io::Error::other("spawn failed")),
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(stdout, b"{}\n");
-        assert_eq!(hook_spool::spool_len(&spool), 1);
-    }
-
-    #[tokio::test]
-    async fn devin_session_end_spools_stored_session_id_then_clears_state() {
-        let tmp = tempfile::tempdir().unwrap();
-        let data_dir = tmp.path().to_path_buf();
-        let spool = hook_spool::spool_dir(&data_dir);
-        store_session_id(&data_dir, AgentKind::Devin, "stable-devin-session");
-        let mut stdout = Vec::new();
-        let args = HookArgs {
-            event: "session-end".into(),
-            agent: "devin".into(),
-            server_url: dead_server_url(),
-            auth_token: None,
-            project_strategy: None,
-            check_capture: false,
-            capture_assistant: false,
-            capture_mode: None,
-        };
-
-        run_with_payload(
-            Some(data_dir.clone()),
-            args,
-            r#"{"hook_event_name":"SessionEnd"}"#.into(),
-            &mut stdout,
-            |_, _| Ok(()),
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(stdout, b"{}\n");
-        assert!(stored_session_id(&data_dir, AgentKind::Devin).is_none());
-        let entries: Vec<_> = std::fs::read_dir(&spool)
-            .unwrap()
-            .map(|entry| entry.unwrap().path())
-            .collect();
-        assert_eq!(entries.len(), 1);
-        let entry: hook_spool::SpoolEntry =
-            serde_json::from_slice(&std::fs::read(&entries[0]).unwrap()).unwrap();
-        assert!(
-            entry.url.contains("&session_id=stable-devin-session"),
-            "{}",
-            entry.url
-        );
-    }
-
     #[test]
     fn session_end_spawn_failure_is_returned_for_warning_only() {
         let tmp = tempfile::tempdir().unwrap();
@@ -3458,25 +2682,6 @@ mod tests {
             background_drain_budget_from(one_minute_for(BACKGROUND_DRAIN_BUDGET_ENV)),
             Duration::from_secs(60)
         );
-    }
-
-    #[tokio::test]
-    async fn capture_drop_prevents_spool_and_drainer() {
-        let tmp = tempfile::tempdir().unwrap();
-        std::fs::write(
-            tmp.path().join(".ai-memory.toml"),
-            "[capture]\nignore_paths = [\"secret/**\"]\n",
-        )
-        .unwrap();
-        let data_dir = tmp.path().join("data");
-        let mut stdout = Vec::new();
-        let called = std::cell::Cell::new(false);
-        let mut args = devin_hook_args("post-tool-use");
-        args.server_url = dead_server_url();
-        run_with_payload(Some(data_dir.clone()), args, serde_json::json!({"cwd":tmp.path(),"tool_name":"Edit","tool_input":{"path":"secret/SENTINEL"}}).to_string(), &mut stdout, |_, _| { called.set(true); Ok(()) }).await.unwrap();
-        assert_eq!(stdout, b"{}\n");
-        assert!(!called.get());
-        assert_eq!(hook_spool::spool_len(&hook_spool::spool_dir(&data_dir)), 0);
     }
 
     #[tokio::test]
@@ -3612,7 +2817,7 @@ mod tests {
             "tool_input": {"file_path": "../destination/file.txt"}
         });
         assert_eq!(
-            tool_location_routing_cwd(AgentKind::ClaudeCode, &relative, cwd),
+            tool_location_routing_cwd(AgentKind::Other, &relative, cwd),
             None,
             "a relative path cannot independently prove a destination"
         );
@@ -3624,7 +2829,7 @@ mod tests {
             "tool_input": {"file_path": external_dir.join("file.txt")}
         });
         assert_eq!(
-            tool_location_routing_cwd(AgentKind::ClaudeCode, &external, cwd),
+            tool_location_routing_cwd(AgentKind::Other, &external, cwd),
             None,
             "an arbitrary absolute path must not mint a project"
         );
@@ -3637,7 +2842,7 @@ mod tests {
             ]}
         });
         assert_eq!(
-            tool_location_routing_cwd(AgentKind::ClaudeCode, &mixed, cwd),
+            tool_location_routing_cwd(AgentKind::Other, &mixed, cwd),
             None,
             "one event cannot be attributed to two projects"
         );
@@ -3667,207 +2872,6 @@ mod tests {
             read_spooled_entries(&spool)
         } else {
             Vec::new()
-        }
-    }
-
-    /// Hermes reports its own process cwd (usually `~`) on every tool event and
-    /// points each call at a repository through `workdir` or `path` (#1199).
-    /// Under allowlist mode the process cwd has no marker, so the tool's own
-    /// absolute location must find the repository's marker.
-    #[tokio::test]
-    async fn hermes_tool_location_finds_the_marker_the_process_cwd_lacks() {
-        let tmp = tempfile::tempdir().unwrap();
-        let home = tmp.path().join("home");
-        let repo = home.join("dev").join("some-repo");
-        std::fs::create_dir_all(&repo).unwrap();
-        std::fs::write(
-            repo.join(".ai-memory.toml"),
-            "workspace = \"w\"\nproject = \"some-repo\"\n",
-        )
-        .unwrap();
-        let allowlist = Some(crate::cli::CaptureModeArg::Allowlist);
-        let event = |tool: &str, input: serde_json::Value| {
-            serde_json::json!({
-                "hook_event_name": "post_tool_call",
-                "tool_name": tool,
-                "tool_input": input,
-                "session_id": "hermes-session",
-                "cwd": home,
-                "extra": {"tool_call_id": "call-1", "status": "ok"}
-            })
-        };
-
-        for (name, raw) in [
-            (
-                "terminal workdir",
-                event(
-                    "terminal",
-                    serde_json::json!({"command": "git status", "workdir": repo}),
-                ),
-            ),
-            (
-                "file path",
-                event(
-                    "read_file",
-                    serde_json::json!({"path": repo.join("README.md")}),
-                ),
-            ),
-            (
-                "search directory",
-                event(
-                    "search_files",
-                    serde_json::json!({"pattern": "fn", "path": repo}),
-                ),
-            ),
-        ] {
-            let data_dir = tmp.path().join(format!("data-{}", name.replace(' ', "-")));
-            let entries = spool_one(&data_dir, "hermes", allowlist, &raw).await;
-            assert_eq!(entries.len(), 1, "{name}");
-            assert_eq!(
-                query_param(&entries[0].url, "project"),
-                Some("some-repo"),
-                "{name}"
-            );
-            let body: serde_json::Value = serde_json::from_str(&entries[0].body).unwrap();
-            assert_eq!(body["cwd"], repo.to_string_lossy().as_ref(), "{name}");
-        }
-
-        // Controls: a command with no location, or a relative one Hermes
-        // resolves against a session cwd the payload never carries, still
-        // belongs to the unmarked process cwd and is not captured.
-        for (name, raw) in [
-            (
-                "no workdir",
-                event("terminal", serde_json::json!({"command": "git status"})),
-            ),
-            (
-                "relative workdir",
-                event(
-                    "terminal",
-                    serde_json::json!({"command": "git status", "workdir": "dev/some-repo"}),
-                ),
-            ),
-            (
-                "relative search",
-                event(
-                    "search_files",
-                    serde_json::json!({"pattern": "fn", "path": "."}),
-                ),
-            ),
-        ] {
-            let data_dir = tmp.path().join(format!("data-{}", name.replace(' ', "-")));
-            assert!(
-                spool_one(&data_dir, "hermes", allowlist, &raw)
-                    .await
-                    .is_empty(),
-                "{name}"
-            );
-        }
-    }
-
-    /// A shell `workdir` reroute lands under the destination's exclusions: a
-    /// command reading an ignored path there is dropped, a public one is kept.
-    #[tokio::test]
-    async fn workdir_reroute_applies_the_destination_capture_policy() {
-        let tmp = tempfile::tempdir().unwrap();
-        let home = tmp.path().join("home");
-        let repo = tmp.path().join("repo");
-        std::fs::create_dir_all(&home).unwrap();
-        std::fs::create_dir_all(&repo).unwrap();
-        std::fs::write(
-            repo.join(".ai-memory.toml"),
-            "project = \"repo\"\n[capture]\nignore_paths = [\"secret/**\"]\n",
-        )
-        .unwrap();
-        for (command, spooled) in [("cat secret/token.txt", 0), ("cat README.md", 1)] {
-            let raw = serde_json::json!({
-                "tool_name": "terminal",
-                "tool_input": {"command": command, "workdir": repo},
-                "tool_response": "SENTINEL_CONTENT",
-                "session_id": "hermes-session",
-                "cwd": home,
-            });
-            let data_dir = tmp.path().join(format!("data-{spooled}"));
-            assert_eq!(
-                spool_one(&data_dir, "hermes", None, &raw).await.len(),
-                spooled,
-                "{command}"
-            );
-        }
-    }
-
-    /// Adversarial: a reroute must never escape the payload cwd's own
-    /// `ignore_paths`. The source excludes a path outside its checkout and a
-    /// path inside it; a file tool targeting the first, or a shell command
-    /// naming the second while its `workdir` points at another project, would
-    /// otherwise be judged only by the destination's (inactive) policy and
-    /// spooled. Controls: the same tools on public paths still reroute.
-    #[tokio::test]
-    async fn a_reroute_cannot_escape_the_source_capture_exclusions() {
-        let tmp = tempfile::tempdir().unwrap();
-        let source = tmp.path().join("source");
-        let vault = tmp.path().join("vault");
-        let other = tmp.path().join("other");
-        for dir in [&source, &vault, &other] {
-            std::fs::create_dir_all(dir).unwrap();
-        }
-        std::fs::write(
-            source.join(".ai-memory.toml"),
-            format!(
-                "project = \"source\"\n[capture]\nignore_paths = [\"secret/**\", {:?}]\n",
-                format!("{}/**", vault.display())
-            ),
-        )
-        .unwrap();
-        std::fs::write(vault.join(".ai-memory.toml"), "project = \"vault\"\n").unwrap();
-        std::fs::write(other.join(".ai-memory.toml"), "project = \"other\"\n").unwrap();
-        let bash = |command: String| {
-            serde_json::json!({
-                "session_id": "escape",
-                "cwd": source,
-                "tool_name": "Bash",
-                "tool_input": {"command": command, "workdir": other},
-                "tool_response": {"stdout": "SENTINEL_MUST_NOT_BE_SPOOLED"}
-            })
-        };
-        let read = |path: PathBuf| {
-            serde_json::json!({
-                "session_id": "escape",
-                "cwd": source,
-                "tool_name": "Read",
-                "tool_input": {"file_path": path},
-                "tool_response": {"content": "SENTINEL_MUST_NOT_BE_SPOOLED"}
-            })
-        };
-
-        for (name, raw) in [
-            ("file outside the source", read(vault.join("key.md"))),
-            (
-                "shell naming a source file",
-                bash(format!("cat {}", source.join("secret/token.txt").display())),
-            ),
-        ] {
-            let data_dir = tmp.path().join(format!("data-{}", name.replace(' ', "-")));
-            assert!(
-                spool_one(&data_dir, "claude-code", None, &raw)
-                    .await
-                    .is_empty(),
-                "{name}: the source exclusion must still drop the event"
-            );
-        }
-
-        for (name, raw, project) in [
-            ("public file", read(other.join("readme.md")), "other"),
-            ("public shell", bash("git status".to_owned()), "other"),
-        ] {
-            let data_dir = tmp.path().join(format!("data-{}", name.replace(' ', "-")));
-            let entries = spool_one(&data_dir, "claude-code", None, &raw).await;
-            assert_eq!(entries.len(), 1, "{name}");
-            assert_eq!(
-                query_param(&entries[0].url, "project"),
-                Some(project),
-                "{name}"
-            );
         }
     }
 
@@ -4349,7 +3353,7 @@ mod tests {
     ) -> Option<CaptureDisposition> {
         let raw = bash_call(cwd, command);
         foreign_decision_within(
-            AgentKind::ClaudeCode,
+            AgentKind::Other,
             &raw,
             &lexical_capture_cwd(&cwd.to_string_lossy()),
             own_marker,
@@ -4873,101 +3877,6 @@ mod tests {
         }
     }
 
-    /// Gemini CLI's `run_shell_command` and `read_many_files` were unknown
-    /// tools, so the native hook spooled their raw output even when they read
-    /// an ignored path. Both events of each call are now dropped before the
-    /// spool; public calls are still spooled with their family recorded.
-    #[tokio::test]
-    async fn gemini_cli_shell_and_read_many_files_exclusions_drop_before_spool() {
-        let cases = [
-            (
-                "run_shell_command",
-                serde_json::json!({"command": "cat secret/token.txt"}),
-                0,
-            ),
-            (
-                "run_shell_command",
-                serde_json::json!({"command": "cat token.txt", "dir_path": "secret"}),
-                0,
-            ),
-            (
-                "read_many_files",
-                serde_json::json!({"include": ["secret/token.txt"]}),
-                0,
-            ),
-            (
-                "read_many_files",
-                serde_json::json!({"include": ["README.md", "secret/token.txt"]}),
-                0,
-            ),
-            (
-                "read_many_files",
-                serde_json::json!({"include": ["**/*.txt"]}),
-                0,
-            ),
-            (
-                "run_shell_command",
-                serde_json::json!({"command": "cat README.md"}),
-                1,
-            ),
-            (
-                "read_many_files",
-                serde_json::json!({"include": ["README.md", "src/**/*.rs"]}),
-                1,
-            ),
-        ];
-        for (tool, input, spooled) in cases {
-            for event in ["pre-tool-use", "post-tool-use"] {
-                let tmp = tempfile::tempdir().unwrap();
-                std::fs::write(
-                    tmp.path().join(".ai-memory.toml"),
-                    "[capture]\nignore_paths = [\"secret/**\"]\n",
-                )
-                .unwrap();
-                let data_dir = tmp.path().join("data");
-                let mut args = devin_hook_args(event);
-                args.agent = "gemini-cli".into();
-                let raw = serde_json::json!({
-                    "session_id": "gemini", "cwd": tmp.path(),
-                    "tool_name": tool, "tool_input": input,
-                    "tool_response": {"llmContent": "SENTINEL_CONTENT"},
-                });
-                run_with_payload(
-                    Some(data_dir.clone()),
-                    args,
-                    raw.to_string(),
-                    &mut Vec::new(),
-                    |_, _| panic!("tool events below the threshold must only spool"),
-                )
-                .await
-                .unwrap();
-                let spool = hook_spool::spool_dir(&data_dir);
-                let entries = if spool.exists() {
-                    read_spooled_entries(&spool)
-                } else {
-                    Vec::new()
-                };
-                assert_eq!(entries.len(), spooled, "{event}: {tool} {input}");
-                for entry in &entries {
-                    let body: serde_json::Value = serde_json::from_str(&entry.body).unwrap();
-                    let family = if tool == "read_many_files" {
-                        "file"
-                    } else {
-                        "non-file"
-                    };
-                    assert_eq!(
-                        body["_ai_memory_capture"]["tool_family"], family,
-                        "{event}: {tool}"
-                    );
-                    assert_eq!(
-                        body["_ai_memory_capture"]["disposition"], "keep",
-                        "{event}: {tool}"
-                    );
-                }
-            }
-        }
-    }
-
     /// Calls that used to carry an excluded file's content into the spool: a
     /// Gemini `read_many_files` directory entry (read as `entry/**`), Copilot
     /// CLI's runtime `view`/`create`, tools reading back an earlier command's
@@ -5083,202 +3992,6 @@ mod tests {
                 }
             }
         }
-    }
-
-    #[tokio::test]
-    async fn codex_native_capture_policy_runs_before_spool_and_preserves_identity() {
-        for (tool, input, disposition) in [
-            (
-                "read_file",
-                serde_json::json!({"path": "secret/private.txt"}),
-                CaptureDisposition::Drop,
-            ),
-            (
-                "apply_patch",
-                serde_json::json!({"command": "*** Begin Patch\n*** Add File: secret/private.txt\n+PRIVATE_CONTENT\n*** End Patch"}),
-                CaptureDisposition::MetadataOnly,
-            ),
-            (
-                "apply_patch",
-                serde_json::json!(null),
-                CaptureDisposition::MetadataOnly,
-            ),
-        ] {
-            for event in ["pre-tool-use", "post-tool-use"] {
-                let tmp = tempfile::tempdir().unwrap();
-                std::fs::write(
-                    tmp.path().join(".ai-memory.toml"),
-                    "workspace = \"native\"\nproject = \"codex\"\n[capture]\nignore_paths = [\"secret/**\"]\n",
-                ).unwrap();
-                let data_dir = tmp.path().join("data");
-                let mut args = devin_hook_args(event);
-                args.agent = "codex".into();
-                let raw = serde_json::json!({
-                    "session_id": "native-codex", "cwd": tmp.path(), "turn_id": "turn-1",
-                    "hook_event_name": if event == "pre-tool-use" { "PreToolUse" } else { "PostToolUse" },
-                    "tool_name": tool, "tool_input": input, "tool_use_id": "call-native-1",
-                    "tool_response": {"content": [{"type": "text", "text": "PRIVATE_CONTENT"}]},
-                });
-                let mut stdout = Vec::new();
-                run_with_payload(
-                    Some(data_dir.clone()),
-                    args,
-                    raw.to_string(),
-                    &mut stdout,
-                    |_, _| {
-                        panic!("tool events below the threshold must only spool");
-                    },
-                )
-                .await
-                .unwrap();
-                assert_eq!(stdout, b"{}\n");
-                let spool = hook_spool::spool_dir(&data_dir);
-                if disposition == CaptureDisposition::Drop {
-                    assert!(!spool.exists());
-                } else {
-                    let entries = read_spooled_entries(&spool);
-                    assert_eq!(entries.len(), 1);
-                    let entry = &entries[0];
-                    assert_eq!(query_param(&entry.url, "agent"), Some("codex"));
-                    assert_eq!(query_param(&entry.url, "workspace"), Some("native"));
-                    assert_eq!(query_param(&entry.url, "project"), Some("codex"));
-                    assert!(query_param(&entry.url, "ingest_key").is_some());
-                    assert!(!entry.body.contains("PRIVATE_CONTENT"));
-                    assert!(!entry.body.contains("private.txt"));
-                    let body: serde_json::Value = serde_json::from_str(&entry.body).unwrap();
-                    assert_eq!(body["session_id"], "native-codex");
-                    assert_eq!(body["tool_call_id"], "call-native-1");
-                    assert_eq!(body["_ai_memory_capture"]["disposition"], "metadata-only");
-                    assert_eq!(
-                        body["_ai_memory_capture"]["extraction_state"],
-                        "missing-or-malformed"
-                    );
-                }
-            }
-        }
-    }
-
-    #[tokio::test]
-    async fn hermes_file_exclusion_drops_before_spool_or_drain() {
-        let tmp = tempfile::tempdir().unwrap();
-        std::fs::write(
-            tmp.path().join(".ai-memory.toml"),
-            "[capture]\nignore_paths = [\"secret/**\"]\n",
-        )
-        .unwrap();
-        let data_dir = tmp.path().join("data");
-        let mut stdout = Vec::new();
-        let called = std::cell::Cell::new(false);
-        let mut args = devin_hook_args("post-tool-use");
-        args.agent = "hermes".into();
-        let raw = serde_json::json!({
-            "hook_event_name": "post_tool_call",
-            "tool_name": "write_file",
-            "tool_input": {
-                "path": "secret/token.txt",
-                "content": "SENTINEL_MUST_NOT_BE_SPOOLED"
-            },
-            "session_id": "hermes-session",
-            "cwd": tmp.path(),
-            "extra": {"tool_call_id": "call-42", "status": "ok"}
-        });
-        run_with_payload(
-            Some(data_dir.clone()),
-            args,
-            raw.to_string(),
-            &mut stdout,
-            |_, _| {
-                called.set(true);
-                Ok(())
-            },
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(stdout, b"{}\n");
-        assert!(!called.get());
-        assert_eq!(hook_spool::spool_len(&hook_spool::spool_dir(&data_dir)), 0);
-    }
-
-    #[tokio::test]
-    async fn pool_file_exclusion_drops_before_spool_or_drain() {
-        let tmp = tempfile::tempdir().unwrap();
-        std::fs::write(
-            tmp.path().join(".ai-memory.toml"),
-            "[capture]\nignore_paths = [\"secret/**\"]\n",
-        )
-        .unwrap();
-        let data_dir = tmp.path().join("data");
-        let mut stdout = Vec::new();
-        let called = std::cell::Cell::new(false);
-        let mut args = devin_hook_args("post-tool-use");
-        args.agent = "pool".into();
-        let raw = serde_json::json!({
-            "hook_event_name": "PostToolUse",
-            "tool_name": "write",
-            "tool_input": {
-                "path": "secret/token.txt",
-                "content": "SENTINEL_MUST_NOT_BE_SPOOLED"
-            },
-            "session_id": "pool-session",
-            "cwd": tmp.path()
-        });
-        run_with_payload(
-            Some(data_dir.clone()),
-            args,
-            raw.to_string(),
-            &mut stdout,
-            |_, _| {
-                called.set(true);
-                Ok(())
-            },
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(stdout, b"{}\n");
-        assert!(!called.get());
-        assert_eq!(hook_spool::spool_len(&hook_spool::spool_dir(&data_dir)), 0);
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn capture_drop_handles_symlinked_cwd() {
-        let tmp = tempfile::tempdir().unwrap();
-        let project = tmp.path().join("project");
-        std::fs::create_dir(&project).unwrap();
-        std::fs::write(
-            project.join(".ai-memory.toml"),
-            "[capture]\nignore_paths = [\"secret/**\"]\n",
-        )
-        .unwrap();
-        let alias = tmp.path().join("project-alias");
-        std::os::unix::fs::symlink(&project, &alias).unwrap();
-
-        let data_dir = tmp.path().join("data");
-        let mut stdout = Vec::new();
-        let called = std::cell::Cell::new(false);
-        run_with_payload(
-            Some(data_dir.clone()),
-            devin_hook_args("post-tool-use"),
-            serde_json::json!({
-                "cwd": alias,
-                "tool_name": "Edit",
-                "tool_input": {"path": "secret/SENTINEL"}
-            })
-            .to_string(),
-            &mut stdout,
-            |_, _| {
-                called.set(true);
-                Ok(())
-            },
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(stdout, b"{}\n");
-        assert!(!called.get());
-        assert_eq!(hook_spool::spool_len(&hook_spool::spool_dir(&data_dir)), 0);
     }
 
     #[tokio::test]
@@ -5673,33 +4386,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn antigravity_pre_tool_capture_drop_still_allows_the_tool() {
-        let tmp = tempfile::tempdir().unwrap();
-        std::fs::write(
-            tmp.path().join(".ai-memory.toml"),
-            "workspace = \"canonical\"\n[capture]\nignore_paths = [\"secret/**\"]\n",
-        )
-        .unwrap();
-        let data_dir = tmp.path().join("data");
-        let mut args = devin_hook_args("pre-tool-use");
-        args.agent = "antigravity-cli".into();
-        let mut stdout = Vec::new();
-        let raw = serde_json::json!({"workspacePaths":[tmp.path()],"toolCall":{"name":"Edit","args":{"path":"secret/a"}}});
-        assert!(cwd_query_suffix("antigravity-cli", &raw, None).contains("workspace=canonical"));
-        run_with_payload(
-            Some(data_dir.clone()),
-            args,
-            raw.to_string(),
-            &mut stdout,
-            |_, _| Err(std::io::Error::other("must not spawn")),
-        )
-        .await
-        .unwrap();
-        assert_eq!(stdout, b"{\"decision\": \"allow\"}\n");
-        assert_eq!(hook_spool::spool_len(&hook_spool::spool_dir(&data_dir)), 0);
-    }
-
-    #[tokio::test]
     async fn metadata_only_canonicalizes_supported_session_aliases() {
         for (key, value) in [
             ("session_id", serde_json::json!("one")),
@@ -5735,20 +4421,6 @@ mod tests {
             assert_eq!(body["session_id"], value, "{key}");
         }
     }
-
-    fn grok_hook_args(event: &str, server_url: &str) -> HookArgs {
-        HookArgs {
-            event: event.into(),
-            agent: "grok".into(),
-            server_url: server_url.into(),
-            auth_token: None,
-            project_strategy: None,
-            check_capture: false,
-            capture_assistant: false,
-            capture_mode: None,
-        }
-    }
-
     #[tokio::test]
     async fn antigravity_post_tool_use_spools_enriched_output() {
         let tmp = tempfile::tempdir().unwrap();
@@ -5822,46 +4494,6 @@ mod tests {
             capture_mode: None,
         }
     }
-
-    fn kiro_hook_args(event: &str, server_url: &str) -> HookArgs {
-        HookArgs {
-            event: event.into(),
-            agent: "kiro-cli".into(),
-            server_url: server_url.into(),
-            auth_token: None,
-            project_strategy: None,
-            check_capture: false,
-            capture_assistant: false,
-            capture_mode: None,
-        }
-    }
-
-    fn copilot_cli_hook_args(event: &str, server_url: &str) -> HookArgs {
-        HookArgs {
-            event: event.into(),
-            agent: "copilot-cli".into(),
-            server_url: server_url.into(),
-            auth_token: None,
-            project_strategy: None,
-            check_capture: false,
-            capture_assistant: false,
-            capture_mode: None,
-        }
-    }
-
-    fn antigravity_hook_args(event: &str, server_url: &str) -> HookArgs {
-        HookArgs {
-            event: event.into(),
-            agent: "antigravity-cli".into(),
-            server_url: server_url.into(),
-            auth_token: None,
-            project_strategy: None,
-            check_capture: false,
-            capture_assistant: false,
-            capture_mode: None,
-        }
-    }
-
     /// Recording HTTP stub: replies to every request with `status`/`body` and
     /// streams each request head back so tests can assert which endpoints the
     /// hook touched (session-start also drains the spool, so POSTs to `/hook`
@@ -5900,383 +4532,6 @@ mod tests {
             .await
             .ok()
             .flatten()
-    }
-
-    #[tokio::test]
-    async fn antigravity_initial_invocation_fetches_with_native_output_contract() {
-        let tmp = tempfile::tempdir().unwrap();
-        let (base, mut requests) = serve_requests("200 OK", "AGY-HANDOFF").await;
-        let mut stdout = Vec::new();
-        run_with_payload(
-            Some(tmp.path().join("data")),
-            antigravity_hook_args("session-start", &base),
-            serde_json::json!({
-                "invocationNum": 0,
-                "initialNumSteps": 0,
-                "conversationId": "agy-conversation",
-                "workspacePaths": [tmp.path()]
-            })
-            .to_string(),
-            &mut stdout,
-            |_, _| Ok(()),
-        )
-        .await
-        .unwrap();
-
-        let output: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
-        assert_eq!(
-            output,
-            serde_json::json!({
-                "injectSteps": [{"ephemeralMessage": "AGY-HANDOFF"}]
-            })
-        );
-        let mut recorded = Vec::new();
-        while let Some(request) = first_request(&mut requests).await {
-            recorded.push(request);
-        }
-        assert!(
-            recorded
-                .iter()
-                .any(|request| request.starts_with("POST /hook")),
-            "{recorded:?}"
-        );
-        assert!(
-            recorded.iter().any(|request| {
-                request.starts_with("GET /handoff?")
-                    && request.contains("session_id=agy-conversation")
-            }),
-            "{recorded:?}"
-        );
-    }
-
-    #[tokio::test]
-    async fn antigravity_second_turn_of_a_conversation_does_not_restart_the_session() {
-        let tmp = tempfile::tempdir().unwrap();
-        let data_dir = tmp.path().join("data");
-        let payload = serde_json::json!({
-            "invocationNum": 0,
-            "conversationId": "agy-conversation",
-            "workspacePaths": [tmp.path()]
-        })
-        .to_string();
-        let (base, _first) = serve_requests("200 OK", "AGY-HANDOFF").await;
-        let mut stdout = Vec::new();
-        run_with_payload(
-            Some(data_dir.clone()),
-            antigravity_hook_args("session-start", &base),
-            payload.clone(),
-            &mut stdout,
-            |_, _| Ok(()),
-        )
-        .await
-        .unwrap();
-
-        let (base, mut requests) = serve_requests("200 OK", "MUST-NOT-BE-CONSUMED").await;
-        let mut stdout = Vec::new();
-        run_with_payload(
-            Some(data_dir.clone()),
-            antigravity_hook_args("session-start", &base),
-            payload,
-            &mut stdout,
-            |_, _| Err(std::io::Error::other("must not spawn")),
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(stdout, b"{}\n");
-        assert!(first_request(&mut requests).await.is_none());
-    }
-
-    #[test]
-    fn antigravity_conversation_marker_only_for_named_antigravity_starts() {
-        let dir = Path::new("/d");
-        let raw = serde_json::json!({"conversationId": "a/b"});
-        assert_eq!(
-            antigravity_conversation_start_marker(
-                dir,
-                AgentKind::AntigravityCli,
-                HookEvent::SessionStart,
-                &raw
-            ),
-            Some(dir.join("briefed").join("agy-start-a_b"))
-        );
-        assert!(
-            antigravity_conversation_start_marker(
-                dir,
-                AgentKind::AntigravityCli,
-                HookEvent::SessionStart,
-                &serde_json::json!({})
-            )
-            .is_none()
-        );
-        assert!(
-            antigravity_conversation_start_marker(
-                dir,
-                AgentKind::AntigravityCli,
-                HookEvent::PostToolUse,
-                &raw
-            )
-            .is_none()
-        );
-        assert!(
-            antigravity_conversation_start_marker(
-                dir,
-                AgentKind::ClaudeCode,
-                HookEvent::SessionStart,
-                &raw
-            )
-            .is_none()
-        );
-    }
-
-    #[tokio::test]
-    async fn antigravity_later_invocation_has_no_capture_or_handoff_side_effects() {
-        let tmp = tempfile::tempdir().unwrap();
-        let data_dir = tmp.path().join("data");
-        let (base, mut requests) = serve_requests("200 OK", "MUST-NOT-BE-CONSUMED").await;
-        let mut stdout = Vec::new();
-        run_with_payload(
-            Some(data_dir.clone()),
-            antigravity_hook_args("session-start", &base),
-            serde_json::json!({
-                "invocationNum": 4,
-                "initialNumSteps": 12,
-                "conversationId": "agy-conversation",
-                "workspacePaths": [tmp.path()]
-            })
-            .to_string(),
-            &mut stdout,
-            |_, _| Err(std::io::Error::other("must not spawn")),
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(stdout, b"{}\n");
-        assert!(first_request(&mut requests).await.is_none());
-        assert_eq!(hook_spool::spool_len(&hook_spool::spool_dir(&data_dir)), 0);
-    }
-
-    #[tokio::test]
-    async fn kiro_session_start_prints_handoff_verbatim() {
-        let tmp = tempfile::tempdir().unwrap();
-        let (base, mut requests) = serve_requests("200 OK", "KIRO-HANDOFF").await;
-        let mut stdout = Vec::new();
-        run_with_payload(
-            Some(tmp.path().join("data")),
-            kiro_hook_args("session-start", &base),
-            serde_json::json!({
-                "session_id": "kiro-session",
-                "cwd": tmp.path()
-            })
-            .to_string(),
-            &mut stdout,
-            |_, _| Ok(()),
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(stdout, b"KIRO-HANDOFF\n");
-        let mut recorded = Vec::new();
-        while let Some(request) = first_request(&mut requests).await {
-            recorded.push(request);
-        }
-        assert!(
-            recorded.iter().any(|request| {
-                request.starts_with("GET /handoff?")
-                    && request.contains("agent=kiro-cli")
-                    && request.contains("session_id=kiro-session")
-            }),
-            "{recorded:?}"
-        );
-    }
-
-    #[tokio::test]
-    async fn copilot_cli_session_start_prints_top_level_handoff_envelope() {
-        let tmp = tempfile::tempdir().unwrap();
-        let (base, mut requests) = serve_requests("200 OK", "COPILOT-HANDOFF").await;
-        let mut stdout = Vec::new();
-        run_with_payload(
-            Some(tmp.path().join("data")),
-            copilot_cli_hook_args("session-start", &base),
-            serde_json::json!({
-                "session_id": "copilot-session",
-                "cwd": tmp.path()
-            })
-            .to_string(),
-            &mut stdout,
-            |_, _| Ok(()),
-        )
-        .await
-        .unwrap();
-
-        let envelope: serde_json::Value = serde_json::from_slice(stdout.trim_ascii()).unwrap();
-        assert_eq!(
-            envelope,
-            serde_json::json!({"additionalContext": "COPILOT-HANDOFF"})
-        );
-        assert!(
-            envelope.get("hookSpecificOutput").is_none(),
-            "Copilot reads the top-level SessionStart envelope"
-        );
-        let mut recorded = Vec::new();
-        while let Some(request) = first_request(&mut requests).await {
-            recorded.push(request);
-        }
-        assert!(
-            recorded.iter().any(|request| {
-                request.starts_with("GET /handoff?")
-                    && request.contains("agent=copilot-cli")
-                    && request.contains("session_id=copilot-session")
-            }),
-            "{recorded:?}"
-        );
-    }
-
-    /// Droid documents SessionStart stdout as context and parses a JSON
-    /// stdout's `hookSpecificOutput.additionalContext`, so `--agent droid`
-    /// fetches the handoff and prints Claude Code's envelope (#1240).
-    #[tokio::test]
-    async fn droid_session_start_prints_hook_specific_handoff_envelope() {
-        let tmp = tempfile::tempdir().unwrap();
-        let (base, mut requests) = serve_requests("200 OK", "DROID-HANDOFF").await;
-        let mut stdout = Vec::new();
-        run_with_payload(
-            Some(tmp.path().join("data")),
-            HookArgs {
-                agent: "droid".into(),
-                ..copilot_cli_hook_args("session-start", &base)
-            },
-            serde_json::json!({
-                "session_id": "droid-session",
-                "transcript_path": tmp.path().join("s.jsonl"),
-                "cwd": tmp.path(),
-                "permission_mode": "auto-low",
-                "hook_event_name": "SessionStart",
-                "source": "startup"
-            })
-            .to_string(),
-            &mut stdout,
-            |_, _| Ok(()),
-        )
-        .await
-        .unwrap();
-
-        let envelope: serde_json::Value = serde_json::from_slice(stdout.trim_ascii()).unwrap();
-        assert_eq!(
-            envelope,
-            serde_json::json!({
-                "hookSpecificOutput": {
-                    "hookEventName": "SessionStart",
-                    "additionalContext": "DROID-HANDOFF",
-                }
-            })
-        );
-        let mut recorded = Vec::new();
-        while let Some(request) = first_request(&mut requests).await {
-            recorded.push(request);
-        }
-        assert!(
-            recorded.iter().any(|request| {
-                request.starts_with("GET /handoff?")
-                    && request.contains("agent=droid")
-                    && request.contains("session_id=droid-session")
-            }),
-            "{recorded:?}"
-        );
-    }
-
-    /// Muse injects SessionStart's `hookSpecificOutput.additionalContext` as
-    /// developer context (verified offline on Muse Code 1.4.7), so `--agent
-    /// muse` fetches the handoff for the payload's UUIDv7 session id and
-    /// prints Claude Code's envelope.
-    #[tokio::test]
-    async fn muse_session_start_prints_hook_specific_handoff_envelope() {
-        let tmp = tempfile::tempdir().unwrap();
-        let (base, mut requests) = serve_requests("200 OK", "MUSE-HANDOFF").await;
-        let mut stdout = Vec::new();
-        run_with_payload(
-            Some(tmp.path().join("data")),
-            HookArgs {
-                agent: "muse".into(),
-                ..copilot_cli_hook_args("session-start", &base)
-            },
-            serde_json::json!({
-                "cwd": tmp.path(),
-                "hook_event_name": "SessionStart",
-                "model": "muse-wonder-1.0",
-                "model_provider": "meta",
-                "permission_mode": "bypassPermissions",
-                "session_id": "01a13669-dc61-7a72-b5ec-ad2f300ffd26",
-                "source": "startup",
-                "transcript_path": null
-            })
-            .to_string(),
-            &mut stdout,
-            |_, _| Ok(()),
-        )
-        .await
-        .unwrap();
-
-        let envelope: serde_json::Value = serde_json::from_slice(stdout.trim_ascii()).unwrap();
-        assert_eq!(
-            envelope,
-            serde_json::json!({
-                "hookSpecificOutput": {
-                    "hookEventName": "SessionStart",
-                    "additionalContext": "MUSE-HANDOFF",
-                }
-            })
-        );
-        let mut recorded = Vec::new();
-        while let Some(request) = first_request(&mut requests).await {
-            recorded.push(request);
-        }
-        assert!(
-            recorded.iter().any(|request| {
-                request.starts_with("GET /handoff?")
-                    && request.contains("agent=muse")
-                    && request.contains("session_id=01a13669-dc61-7a72-b5ec-ad2f300ffd26")
-            }),
-            "{recorded:?}"
-        );
-    }
-
-    /// Muse adds SessionStart and UserPromptSubmit stdout to the turn as
-    /// developer context, so with no handoff to deliver the hook prints
-    /// nothing there, never `{}`. Control: its Stop still replies `{}`, and
-    /// Droid's prompt hook still prints `{}`.
-    #[tokio::test]
-    async fn muse_context_events_print_nothing_without_a_handoff() {
-        let run = |agent: &'static str, event: &'static str| async move {
-            let tmp = tempfile::tempdir().unwrap();
-            let (base, _requests) = serve_requests("404 Not Found", "").await;
-            let mut stdout = Vec::new();
-            run_with_payload(
-                Some(tmp.path().join("data")),
-                HookArgs {
-                    agent: agent.into(),
-                    ..copilot_cli_hook_args(event, &base)
-                },
-                serde_json::json!({
-                    "cwd": tmp.path(),
-                    "hook_event_name": "UserPromptSubmit",
-                    "prompt": "Please do the file steps.",
-                    "session_id": "01a13669-dc61-7a72-b5ec-ad2f300ffd26",
-                    "transcript_path": null,
-                    "turn_id": "ccfe4a87-c654-49f5-b5e9-473015c7a90b"
-                })
-                .to_string(),
-                &mut stdout,
-                |_, _| Ok(()),
-            )
-            .await
-            .unwrap();
-            String::from_utf8(stdout).unwrap()
-        };
-        assert_eq!(run("muse", "user-prompt-submit").await, "");
-        assert_eq!(run("muse", "session-start").await, "");
-        assert_eq!(run("muse", "stop").await.trim(), "{}");
-        assert_eq!(run("droid", "user-prompt-submit").await.trim(), "{}");
     }
 
     // ── #992: per-repository server profiles ─────────────────────────────
@@ -6774,47 +5029,6 @@ mod tests {
         assert_eq!(hook_spool::spool_len(&hook_spool::spool_dir(&data_dir)), 0);
     }
 
-    /// Session start fetches the handoff from the profile's server with the
-    /// profile's token; the install-default server sees nothing at all.
-    #[tokio::test]
-    async fn session_start_handoff_comes_from_the_profile_server_only() {
-        let tmp = tempfile::tempdir().unwrap();
-        let data_dir = tmp.path().join("data");
-        let (profile_base, mut profile_requests) = serve_requests("200 OK", "B-HANDOFF").await;
-        let (default_base, mut default_requests) = serve_requests("200 OK", "A-HANDOFF").await;
-        let repo = repo_with_marker(tmp.path(), "repo", "server = \"team-b\"\n");
-        register_profile(&data_dir, "team-b", &profile_base, &[&repo], Some("tok-b"));
-        crate::config::store_hook_auth_token(&data_dir, "INSTALL-TOKEN").unwrap();
-
-        let mut stdout = Vec::new();
-        run_with_payload(
-            Some(data_dir.clone()),
-            kiro_hook_args("session-start", &default_base),
-            serde_json::json!({"session_id": "kiro-session", "cwd": repo}).to_string(),
-            &mut stdout,
-            |_, _| Ok(()),
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(stdout, b"B-HANDOFF\n");
-        let mut recorded = Vec::new();
-        while let Some(request) = first_request(&mut profile_requests).await {
-            recorded.push(request);
-        }
-        assert!(
-            recorded.iter().any(|r| r.starts_with("GET /handoff?")
-                && r.lines()
-                    .any(|l| l.eq_ignore_ascii_case("authorization: Bearer tok-b"))),
-            "{recorded:?}"
-        );
-        assert!(
-            recorded.iter().all(|r| !r.contains("INSTALL-TOKEN")),
-            "{recorded:?}"
-        );
-        assert_eq!(first_request(&mut default_requests).await, None);
-    }
-
     /// Recording stub that accepts exactly one bearer. An authorised
     /// `/hook/batch` answers `{"accepted": n}`, an authorised per-event POST
     /// `202`, anything else `401`. Every request is recorded whole (head and
@@ -6966,559 +5180,6 @@ mod tests {
             "{b}"
         );
     }
-
-    #[tokio::test]
-    async fn kimi_user_prompt_prints_the_handoff_body_verbatim() {
-        let tmp = tempfile::tempdir().unwrap();
-        let (base, mut requests) = serve_requests("200 OK", "AMWS-HANDOFF-DELTA").await;
-        let mut stdout = Vec::new();
-        run_with_payload(
-            Some(tmp.path().to_path_buf()),
-            kimi_hook_args("user-prompt", &base),
-            serde_json::json!({
-                "sessionId": "session_abc",
-                "cwd": tmp.path(),
-                "prompt": "hello"
-            })
-            .to_string(),
-            &mut stdout,
-            |_, _| Ok(()),
-        )
-        .await
-        .unwrap();
-
-        // Kimi injects UserPromptSubmit stdout verbatim into the turn, so the
-        // body must be the bare handoff — never a JSON envelope.
-        assert_eq!(stdout, b"AMWS-HANDOFF-DELTA\n");
-        let request = first_request(&mut requests).await.unwrap();
-        assert!(request.starts_with("GET /handoff?"), "{request}");
-        assert!(request.contains("agent=kimi-code"), "{request}");
-        // The native session id rides along so the destructive fetch can link
-        // the managed run to the kimi session.
-        assert!(request.contains("session_id=session_abc"), "{request}");
-    }
-
-    #[tokio::test]
-    async fn kimi_user_prompt_submit_stem_also_delivers_the_handoff() {
-        // The default PosixNative/WindowsNative installs pass the script stem
-        // (`--event user-prompt-submit`), not the legacy `user-prompt` token;
-        // both must trigger delivery or the production path would print `{}`
-        // and kimi would inject it as literal context.
-        let tmp = tempfile::tempdir().unwrap();
-        let (base, mut requests) = serve_requests("200 OK", "AMWS-HANDOFF-DELTA").await;
-        let mut stdout = Vec::new();
-        run_with_payload(
-            Some(tmp.path().to_path_buf()),
-            kimi_hook_args("user-prompt-submit", &base),
-            serde_json::json!({"sessionId": "session_abc", "cwd": tmp.path(), "prompt": "hi"})
-                .to_string(),
-            &mut stdout,
-            |_, _| Ok(()),
-        )
-        .await
-        .unwrap();
-        assert_eq!(stdout, b"AMWS-HANDOFF-DELTA\n");
-        let request = first_request(&mut requests).await.unwrap();
-        assert!(request.starts_with("GET /handoff?"), "{request}");
-
-        let tmp = tempfile::tempdir().unwrap();
-        let (base, mut requests) = serve_requests("404 Not Found", "").await;
-        let mut stdout = Vec::new();
-        run_with_payload(
-            Some(tmp.path().to_path_buf()),
-            kimi_hook_args("user-prompt-submit", &base),
-            serde_json::json!({"sessionId": "session_abc", "cwd": tmp.path(), "prompt": "hi"})
-                .to_string(),
-            &mut stdout,
-            |_, _| Ok(()),
-        )
-        .await
-        .unwrap();
-        let request = first_request(&mut requests).await.unwrap();
-        assert!(request.starts_with("GET /handoff?"), "{request}");
-        assert_eq!(stdout, b"");
-    }
-
-    #[tokio::test]
-    async fn kimi_user_prompt_prints_nothing_when_no_handoff_is_pending() {
-        let tmp = tempfile::tempdir().unwrap();
-        let (base, mut requests) = serve_requests("404 Not Found", "").await;
-        let mut stdout = Vec::new();
-        run_with_payload(
-            Some(tmp.path().to_path_buf()),
-            kimi_hook_args("user-prompt", &base),
-            serde_json::json!({"sessionId": "session_abc", "cwd": tmp.path(), "prompt": "hi"})
-                .to_string(),
-            &mut stdout,
-            |_, _| Ok(()),
-        )
-        .await
-        .unwrap();
-
-        // The hook still attempted the fetch (a miss is indistinguishable
-        // from an empty handoff server-side)...
-        let request = first_request(&mut requests).await.unwrap();
-        assert!(request.starts_with("GET /handoff?"), "{request}");
-        // ...but stdout stays empty: kimi injects nothing, and a `{}`
-        // envelope would show up as literal user-visible text.
-        assert_eq!(stdout, b"");
-    }
-
-    #[tokio::test]
-    async fn kimi_session_start_never_fetches_the_handoff() {
-        let tmp = tempfile::tempdir().unwrap();
-        // A handoff IS pending; kimi's SessionStart stdout is discarded, so
-        // the hook must not consume it here (it is delivered on user-prompt).
-        let (base, mut requests) = serve_requests("200 OK", "AMWS-HANDOFF-DELTA").await;
-        let mut stdout = Vec::new();
-        run_with_payload(
-            Some(tmp.path().to_path_buf()),
-            kimi_hook_args("session-start", &base),
-            serde_json::json!({"sessionId": "session_abc", "cwd": tmp.path()}).to_string(),
-            &mut stdout,
-            |_, _| Ok(()),
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(stdout, b"{}\n");
-        // The session-start backlog drain may POST the spooled event, but no
-        // request may touch /handoff.
-        while let Some(request) = first_request(&mut requests).await {
-            assert!(!request.starts_with("GET /handoff"), "{request}");
-        }
-    }
-
-    #[tokio::test]
-    async fn claude_user_prompt_does_not_fetch_the_handoff() {
-        let tmp = tempfile::tempdir().unwrap();
-        let (base, mut requests) = serve_requests("200 OK", "AMWS-HANDOFF-DELTA").await;
-        let mut args = kimi_hook_args("user-prompt", &base);
-        args.agent = "claude-code".into();
-        let mut stdout = Vec::new();
-        run_with_payload(
-            Some(tmp.path().to_path_buf()),
-            args,
-            serde_json::json!({"session_id": "claude-session", "cwd": tmp.path()}).to_string(),
-            &mut stdout,
-            |_, _| Ok(()),
-        )
-        .await
-        .unwrap();
-
-        // Claude keeps receiving the handoff on session-start; user-prompt
-        // output stays the plain empty object and no fetch happens.
-        assert_eq!(stdout, b"{}\n");
-        while let Some(request) = first_request(&mut requests).await {
-            assert!(!request.starts_with("GET /handoff"), "{request}");
-        }
-    }
-
-    fn write_briefing_marker(dir: &Path) {
-        std::fs::write(
-            dir.join(".ai-memory.toml"),
-            "[briefing]\ninject_on_session_start = true\nmax_chars = 6000\n",
-        )
-        .unwrap();
-    }
-
-    #[tokio::test]
-    async fn kimi_user_prompt_briefing_only_on_first_prompt_of_session() {
-        let tmp = tempfile::tempdir().unwrap();
-        let data_dir = tmp.path().join("data");
-        let cwd = tmp.path().join("repo");
-        std::fs::create_dir(&cwd).unwrap();
-        write_briefing_marker(&cwd);
-        let (base, mut requests) = serve_requests("200 OK", "AMWS-HANDOFF-DELTA").await;
-        let payload = serde_json::json!({
-            "sessionId": "session_abc",
-            "cwd": cwd,
-            "prompt": "hi"
-        })
-        .to_string();
-
-        // First prompt of the session: the briefing params ride along so the
-        // server appends the compiled project brief (kimi cannot receive it
-        // on SessionStart — that hook's stdout is discarded).
-        let mut stdout = Vec::new();
-        run_with_payload(
-            Some(data_dir.clone()),
-            kimi_hook_args("user-prompt-submit", &base),
-            payload.clone(),
-            &mut stdout,
-            |_, _| Ok(()),
-        )
-        .await
-        .unwrap();
-        assert_eq!(stdout, b"AMWS-HANDOFF-DELTA\n");
-        let first = first_request(&mut requests).await.unwrap();
-        assert!(first.starts_with("GET /handoff?"), "{first}");
-        assert!(first.contains("&briefing=true"), "{first}");
-        assert!(first.contains("&briefing_budget=6000"), "{first}");
-        // ...and the session is marked as briefed.
-        assert!(data_dir.join("briefed").join("session_abc").is_file());
-
-        // Second prompt: the handoff is still fetched and printed (cheap and
-        // self-limiting), but the briefing params are gone so the server
-        // does not recompose the brief on every prompt.
-        let mut stdout = Vec::new();
-        run_with_payload(
-            Some(data_dir.clone()),
-            kimi_hook_args("user-prompt-submit", &base),
-            payload,
-            &mut stdout,
-            |_, _| Ok(()),
-        )
-        .await
-        .unwrap();
-        assert_eq!(stdout, b"AMWS-HANDOFF-DELTA\n");
-        let second = first_request(&mut requests).await.unwrap();
-        assert!(second.starts_with("GET /handoff?"), "{second}");
-        assert!(second.contains("agent=kimi-code"), "{second}");
-        assert!(second.contains("session_id=session_abc"), "{second}");
-        assert!(second.contains("&cwd="), "{second}");
-        assert!(!second.contains("briefing"), "{second}");
-    }
-
-    #[tokio::test]
-    async fn kimi_user_prompt_briefing_fallback_key_hashes_agent_and_cwd() {
-        let tmp = tempfile::tempdir().unwrap();
-        let data_dir = tmp.path().join("data");
-        let cwd = tmp.path().join("repo");
-        std::fs::create_dir(&cwd).unwrap();
-        write_briefing_marker(&cwd);
-        let (base, mut requests) = serve_requests("200 OK", "AMWS-HANDOFF-DELTA").await;
-        // No session id in the payload: the briefed marker is keyed by a
-        // stable hash of agent+cwd, so a session-less payload still briefs
-        // only once.
-        let payload = serde_json::json!({"cwd": cwd, "prompt": "hi"}).to_string();
-
-        let mut stdout = Vec::new();
-        run_with_payload(
-            Some(data_dir.clone()),
-            kimi_hook_args("user-prompt", &base),
-            payload.clone(),
-            &mut stdout,
-            |_, _| Ok(()),
-        )
-        .await
-        .unwrap();
-        assert_eq!(stdout, b"AMWS-HANDOFF-DELTA\n");
-        let first = first_request(&mut requests).await.unwrap();
-        assert!(first.contains("&briefing=true"), "{first}");
-        let expected_key = format!(
-            "{:x}",
-            Sha256::digest(format!("kimi-code\n{}", cwd.to_str().unwrap()).as_bytes())
-        );
-        assert!(data_dir.join("briefed").join(expected_key).is_file());
-
-        let mut stdout = Vec::new();
-        run_with_payload(
-            Some(data_dir.clone()),
-            kimi_hook_args("user-prompt", &base),
-            payload,
-            &mut stdout,
-            |_, _| Ok(()),
-        )
-        .await
-        .unwrap();
-        assert_eq!(stdout, b"AMWS-HANDOFF-DELTA\n");
-        let second = first_request(&mut requests).await.unwrap();
-        assert!(second.starts_with("GET /handoff?"), "{second}");
-        assert!(!second.contains("briefing"), "{second}");
-    }
-
-    #[tokio::test]
-    async fn kimi_user_prompt_without_briefing_creates_no_marker() {
-        let tmp = tempfile::tempdir().unwrap();
-        let data_dir = tmp.path().join("data");
-        let cwd = tmp.path().join("repo");
-        std::fs::create_dir(&cwd).unwrap();
-        let (base, mut requests) = serve_requests("404 Not Found", "").await;
-
-        let mut stdout = Vec::new();
-        run_with_payload(
-            Some(data_dir.clone()),
-            kimi_hook_args("user-prompt-submit", &base),
-            serde_json::json!({
-                "session_id": "session_abc",
-                "cwd": cwd,
-                "prompt": "hi"
-            })
-            .to_string(),
-            &mut stdout,
-            |_, _| Ok(()),
-        )
-        .await
-        .unwrap();
-
-        let request = first_request(&mut requests).await.unwrap();
-        assert!(request.starts_with("GET /handoff?"), "{request}");
-        assert!(!request.contains("briefing"), "{request}");
-        // Only the profile digest's own gate is written; no brief marker.
-        let markers: Vec<String> = std::fs::read_dir(data_dir.join("briefed"))
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-            .collect();
-        assert_eq!(markers, vec!["profile-session_abc".to_owned()]);
-    }
-
-    /// Kimi re-fetches on every prompt, so the profile digest rides the first
-    /// prompt only: later prompts of the session send `profile_digest=0`.
-    #[tokio::test]
-    async fn kimi_delivers_the_profile_digest_on_the_first_prompt_only() {
-        let tmp = tempfile::tempdir().unwrap();
-        let data_dir = tmp.path().join("data");
-        let cwd = tmp.path().join("repo");
-        std::fs::create_dir(&cwd).unwrap();
-        let (base, mut requests) = serve_requests("404 Not Found", "").await;
-        let prompt = || {
-            serde_json::json!({ "session_id": "session_k", "cwd": cwd, "prompt": "hi" }).to_string()
-        };
-        for _ in 0..2 {
-            let mut stdout = Vec::new();
-            run_with_payload(
-                Some(data_dir.clone()),
-                kimi_hook_args("user-prompt-submit", &base),
-                prompt(),
-                &mut stdout,
-                |_, _| Ok(()),
-            )
-            .await
-            .unwrap();
-        }
-        let first = first_request(&mut requests).await.unwrap();
-        let second = first_request(&mut requests).await.unwrap();
-        assert!(!first.contains("profile_digest"), "{first}");
-        assert!(second.contains("&profile_digest=0"), "{second}");
-    }
-
-    #[tokio::test]
-    async fn grok_session_start_never_fetches_the_handoff() {
-        let tmp = tempfile::tempdir().unwrap();
-        let (base, mut requests) = serve_requests("200 OK", "AMWS-HANDOFF-DELTA").await;
-        let mut stdout = Vec::new();
-        run_with_payload(
-            Some(tmp.path().to_path_buf()),
-            grok_hook_args("session-start", &base),
-            serde_json::json!({"session_id": "grok-session", "cwd": tmp.path()}).to_string(),
-            &mut stdout,
-            |_, _| Ok(()),
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(stdout, b"{}\n");
-        while let Some(request) = first_request(&mut requests).await {
-            assert!(!request.starts_with("GET /handoff"), "{request}");
-        }
-    }
-
-    #[tokio::test]
-    async fn grok_user_prompt_does_not_fetch_the_handoff() {
-        let tmp = tempfile::tempdir().unwrap();
-        let (base, mut requests) = serve_requests("200 OK", "AMWS-HANDOFF-DELTA").await;
-        let mut stdout = Vec::new();
-        run_with_payload(
-            Some(tmp.path().to_path_buf()),
-            grok_hook_args("user-prompt", &base),
-            serde_json::json!({
-                "session_id": "grok-session",
-                "cwd": tmp.path(),
-                "prompt": "hello"
-            })
-            .to_string(),
-            &mut stdout,
-            |_, _| Ok(()),
-        )
-        .await
-        .unwrap();
-
-        // Grok discards allowing UserPromptSubmit stdout. Fetching would
-        // accept the handoff and then throw the body away.
-        assert_eq!(stdout, b"{}\n");
-        while let Some(request) = first_request(&mut requests).await {
-            assert!(
-                !request.starts_with("GET /handoff"),
-                "grok user-prompt must not accept the handoff: {request}"
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn grok_user_prompt_submit_stem_does_not_fetch_the_handoff() {
-        let tmp = tempfile::tempdir().unwrap();
-        let data_dir = tmp.path().join("data");
-        let cwd = tmp.path().join("repo");
-        std::fs::create_dir(&cwd).unwrap();
-        write_briefing_marker(&cwd);
-        let (base, mut requests) = serve_requests("200 OK", "AMWS-HANDOFF-DELTA").await;
-        let mut stdout = Vec::new();
-        run_with_payload(
-            Some(data_dir),
-            grok_hook_args("user-prompt-submit", &base),
-            serde_json::json!({
-                "session_id": "grok-session",
-                "cwd": cwd,
-                "prompt": "hi"
-            })
-            .to_string(),
-            &mut stdout,
-            |_, _| Ok(()),
-        )
-        .await
-        .unwrap();
-
-        assert_eq!(stdout, b"{}\n");
-        while let Some(request) = first_request(&mut requests).await {
-            assert!(
-                !request.starts_with("GET /handoff"),
-                "briefing opt-in must not make grok fetch /handoff: {request}"
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn grok_post_tool_prints_additional_context_once() {
-        let tmp = tempfile::tempdir().unwrap();
-        let data_dir = tmp.path().join("data");
-        let (base, mut requests) = serve_requests("200 OK", "AMWS-HANDOFF-DELTA").await;
-        let payload = serde_json::json!({
-            "session_id": "grok-session",
-            "cwd": tmp.path(),
-            "tool_name": "read_file"
-        })
-        .to_string();
-
-        let mut stdout = Vec::new();
-        run_with_payload(
-            Some(data_dir.clone()),
-            grok_hook_args("post-tool-use", &base),
-            payload.clone(),
-            &mut stdout,
-            |_, _| Ok(()),
-        )
-        .await
-        .unwrap();
-        let envelope: serde_json::Value = serde_json::from_slice(stdout.trim_ascii()).unwrap();
-        assert_eq!(
-            envelope["hookSpecificOutput"]["hookEventName"],
-            "PostToolUse"
-        );
-        assert_eq!(
-            envelope["hookSpecificOutput"]["additionalContext"],
-            "AMWS-HANDOFF-DELTA"
-        );
-        let first = first_request(&mut requests).await.unwrap();
-        assert!(first.starts_with("GET /handoff?"), "{first}");
-        assert!(first.contains("agent=grok"), "{first}");
-        assert!(first.contains("session_id=grok-session"), "{first}");
-        assert!(
-            data_dir
-                .join("handoff-shown")
-                .join("grok-session")
-                .is_file(),
-            "shown marker missing"
-        );
-
-        let mut stdout = Vec::new();
-        run_with_payload(
-            Some(data_dir),
-            grok_hook_args("post-tool-use", &base),
-            payload,
-            &mut stdout,
-            |_, _| Ok(()),
-        )
-        .await
-        .unwrap();
-        assert_eq!(stdout, b"{}\n");
-        assert!(
-            first_request(&mut requests).await.is_none(),
-            "second post-tool must not fetch again"
-        );
-    }
-
-    #[tokio::test]
-    async fn grok_post_tool_includes_briefing_when_the_marker_opts_in() {
-        let tmp = tempfile::tempdir().unwrap();
-        let data_dir = tmp.path().join("data");
-        let cwd = tmp.path().join("repo");
-        std::fs::create_dir(&cwd).unwrap();
-        write_briefing_marker(&cwd);
-        let (base, mut requests) = serve_requests("200 OK", "AMWS-HANDOFF-DELTA").await;
-        let mut stdout = Vec::new();
-        run_with_payload(
-            Some(data_dir),
-            grok_hook_args("post-tool-use", &base),
-            serde_json::json!({
-                "session_id": "grok-session",
-                "cwd": cwd,
-                "tool_name": "read_file"
-            })
-            .to_string(),
-            &mut stdout,
-            |_, _| Ok(()),
-        )
-        .await
-        .unwrap();
-        let request = first_request(&mut requests).await.unwrap();
-        assert!(request.contains("&briefing=true"), "{request}");
-        assert!(request.contains("&briefing_budget=6000"), "{request}");
-        let envelope: serde_json::Value = serde_json::from_slice(stdout.trim_ascii()).unwrap();
-        assert_eq!(
-            envelope["hookSpecificOutput"]["additionalContext"],
-            "AMWS-HANDOFF-DELTA"
-        );
-    }
-
-    #[tokio::test]
-    async fn grok_post_tool_skips_a_subagent_payload() {
-        let tmp = tempfile::tempdir().unwrap();
-        let (base, mut requests) = serve_requests("200 OK", "AMWS-HANDOFF-DELTA").await;
-        let mut stdout = Vec::new();
-        run_with_payload(
-            Some(tmp.path().join("data")),
-            grok_hook_args("post-tool-use", &base),
-            serde_json::json!({
-                "session_id": "child-session",
-                "cwd": tmp.path(),
-                "subagentType": "goal-plan-writer",
-                "tool_name": "read_file"
-            })
-            .to_string(),
-            &mut stdout,
-            |_, _| Ok(()),
-        )
-        .await
-        .unwrap();
-        assert_eq!(stdout, b"{}\n");
-        while let Some(request) = first_request(&mut requests).await {
-            assert!(
-                !request.starts_with("GET /handoff"),
-                "a child session must not accept the parent handoff: {request}"
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn grok_post_tool_without_handoff_prints_empty_object() {
-        let tmp = tempfile::tempdir().unwrap();
-        let (base, mut requests) = serve_requests("404 Not Found", "").await;
-        let mut stdout = Vec::new();
-        run_with_payload(
-            Some(tmp.path().join("data")),
-            grok_hook_args("post-tool-use", &base),
-            serde_json::json!({"session_id": "grok-session", "cwd": tmp.path()}).to_string(),
-            &mut stdout,
-            |_, _| Ok(()),
-        )
-        .await
-        .unwrap();
-        assert_eq!(stdout, b"{}\n");
-        let request = first_request(&mut requests).await.unwrap();
-        assert!(request.starts_with("GET /handoff?"), "{request}");
-    }
-
     #[test]
     fn grok_additional_context_is_clipped_to_the_model_cap() {
         let long = "x".repeat(GROK_ADDITIONAL_CONTEXT_CHARS + 50);
@@ -7547,12 +5208,6 @@ mod tests {
                 .is_file()
         );
     }
-    fn codex_args(event: &str, server_url: &str) -> HookArgs {
-        let mut args = claude_args(event, server_url);
-        args.agent = "codex".into();
-        args
-    }
-
     async fn run_hook(data_dir: &Path, args: HookArgs, payload: serde_json::Value) -> Vec<u8> {
         let mut stdout = Vec::new();
         run_with_payload(
@@ -7585,85 +5240,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn claude_reload_prompt_prints_the_recap_envelope() {
-        let tmp = tempfile::tempdir().unwrap();
-        let (base, mut requests) = serve_requests("200 OK", "RECAP-BODY").await;
-        let stdout = run_hook(
-            &tmp.path().join("data"),
-            claude_args("user-prompt-submit", &base),
-            serde_json::json!({
-                "session_id": "claude-session",
-                "cwd": tmp.path(),
-                "prompt": "reload context after last compaction, then go"
-            }),
-        )
-        .await;
-        let envelope: serde_json::Value = serde_json::from_slice(stdout.trim_ascii()).unwrap();
-        assert_eq!(
-            envelope["hookSpecificOutput"]["hookEventName"],
-            "UserPromptSubmit"
-        );
-        assert_eq!(
-            envelope["hookSpecificOutput"]["additionalContext"],
-            "RECAP-BODY"
-        );
-        let seen = all_requests(&mut requests).await;
-        let recap = recap_requests(&seen);
-        assert_eq!(recap.len(), 1, "{seen:?}");
-        assert!(
-            recap[0].contains("session_id=claude-session"),
-            "{}",
-            recap[0]
-        );
-        assert!(recap[0].contains("agent=claude-code"), "{}", recap[0]);
-        assert!(!recap[0].contains("budget="), "{}", recap[0]);
-    }
-
-    #[tokio::test]
-    async fn codex_reload_prompt_asks_for_a_smaller_recap() {
-        let tmp = tempfile::tempdir().unwrap();
-        let (base, mut requests) = serve_requests("200 OK", "RECAP-BODY").await;
-        let stdout = run_hook(
-            &tmp.path().join("data"),
-            codex_args("user-prompt-submit", &base),
-            serde_json::json!({
-                "session_id": "codex-session",
-                "cwd": tmp.path(),
-                "prompt": "Reload context"
-            }),
-        )
-        .await;
-        let envelope: serde_json::Value = serde_json::from_slice(stdout.trim_ascii()).unwrap();
-        assert_eq!(
-            envelope["hookSpecificOutput"]["additionalContext"],
-            "RECAP-BODY"
-        );
-        let seen = all_requests(&mut requests).await;
-        let recap = recap_requests(&seen);
-        assert_eq!(recap.len(), 1, "{seen:?}");
-        assert!(recap[0].contains("budget=6000"), "{}", recap[0]);
-    }
-
-    #[tokio::test]
-    async fn ordinary_prompt_does_not_fetch_a_recap() {
-        let tmp = tempfile::tempdir().unwrap();
-        let (base, mut requests) = serve_requests("200 OK", "RECAP-BODY").await;
-        let stdout = run_hook(
-            &tmp.path().join("data"),
-            claude_args("user-prompt-submit", &base),
-            serde_json::json!({
-                "session_id": "claude-session",
-                "cwd": tmp.path(),
-                "prompt": "can you reload context later?"
-            }),
-        )
-        .await;
-        assert_eq!(stdout, b"{}\n");
-        let seen = all_requests(&mut requests).await;
-        assert!(recap_requests(&seen).is_empty(), "{seen:?}");
-    }
-
-    #[tokio::test]
     async fn cursor_running_claude_settings_does_not_fetch_a_recap() {
         let tmp = tempfile::tempdir().unwrap();
         let (base, mut requests) = serve_requests("200 OK", "RECAP-BODY").await;
@@ -7681,221 +5257,5 @@ mod tests {
         assert!(!String::from_utf8_lossy(&stdout).contains("RECAP-BODY"));
         let seen = all_requests(&mut requests).await;
         assert!(recap_requests(&seen).is_empty(), "{seen:?}");
-    }
-
-    #[tokio::test]
-    async fn recap_server_down_leaves_the_prompt_alone() {
-        let tmp = tempfile::tempdir().unwrap();
-        let stdout = run_hook(
-            &tmp.path().join("data"),
-            claude_args("user-prompt-submit", &dead_server_url()),
-            serde_json::json!({
-                "session_id": "claude-session",
-                "cwd": tmp.path(),
-                "prompt": "reload context"
-            }),
-        )
-        .await;
-        assert_eq!(stdout, b"{}\n");
-    }
-
-    #[tokio::test]
-    async fn grok_reload_prompt_marks_and_never_fetches() {
-        let tmp = tempfile::tempdir().unwrap();
-        let data_dir = tmp.path().join("data");
-        let (base, mut requests) = serve_requests("200 OK", "RECAP-BODY").await;
-        let stdout = run_hook(
-            &data_dir,
-            grok_hook_args("user-prompt", &base),
-            serde_json::json!({
-                "session_id": "grok-session",
-                "cwd": tmp.path(),
-                "prompt": "reload context, then continue"
-            }),
-        )
-        .await;
-        assert_eq!(stdout, b"{}\n");
-        let seen = all_requests(&mut requests).await;
-        assert!(recap_requests(&seen).is_empty(), "{seen:?}");
-        assert!(
-            data_dir
-                .join("recap-pending")
-                .join("grok-session")
-                .is_file(),
-            "recap marker missing"
-        );
-    }
-
-    fn grok_tool_payload(cwd: &Path) -> serde_json::Value {
-        serde_json::json!({
-            "session_id": "grok-session",
-            "cwd": cwd,
-            "tool_name": "read_file"
-        })
-    }
-
-    /// The handoff was already shown, so only the recap can be fetched.
-    fn mark_handoff_shown(data_dir: &Path) {
-        let shown = data_dir.join("handoff-shown");
-        std::fs::create_dir_all(&shown).unwrap();
-        std::fs::write(shown.join("grok-session"), b"").unwrap();
-    }
-
-    fn write_recap_marker(data_dir: &Path, age: Duration) {
-        let dir = data_dir.join("recap-pending");
-        std::fs::create_dir_all(&dir).unwrap();
-        let at = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .saturating_sub(age)
-            .as_secs();
-        std::fs::write(dir.join("grok-session"), at.to_string()).unwrap();
-    }
-
-    #[tokio::test]
-    async fn grok_post_tool_delivers_the_recap_once() {
-        let tmp = tempfile::tempdir().unwrap();
-        let data_dir = tmp.path().join("data");
-        mark_handoff_shown(&data_dir);
-        write_recap_marker(&data_dir, Duration::from_secs(5));
-        let (base, mut requests) = serve_requests("200 OK", "RECAP-BODY").await;
-
-        let stdout = run_hook(
-            &data_dir,
-            grok_hook_args("post-tool-use", &base),
-            grok_tool_payload(tmp.path()),
-        )
-        .await;
-        let envelope: serde_json::Value = serde_json::from_slice(stdout.trim_ascii()).unwrap();
-        assert_eq!(
-            envelope["hookSpecificOutput"]["hookEventName"],
-            "PostToolUse"
-        );
-        assert_eq!(
-            envelope["hookSpecificOutput"]["additionalContext"],
-            "RECAP-BODY"
-        );
-        assert!(!data_dir.join("recap-pending").join("grok-session").exists());
-        let seen = all_requests(&mut requests).await;
-        let recap = recap_requests(&seen);
-        assert_eq!(recap.len(), 1, "{seen:?}");
-        assert!(recap[0].contains("agent=grok"), "{}", recap[0]);
-
-        let stdout = run_hook(
-            &data_dir,
-            grok_hook_args("post-tool-use", &base),
-            grok_tool_payload(tmp.path()),
-        )
-        .await;
-        assert!(!String::from_utf8_lossy(&stdout).contains("RECAP-BODY"));
-        let seen = all_requests(&mut requests).await;
-        assert!(recap_requests(&seen).is_empty(), "{seen:?}");
-    }
-
-    #[tokio::test]
-    async fn grok_recap_sharing_a_handoff_asks_for_the_room_left() {
-        let tmp = tempfile::tempdir().unwrap();
-        let data_dir = tmp.path().join("data");
-        write_recap_marker(&data_dir, Duration::from_secs(5));
-        // The fake server answers both GETs with this 3,000-char body.
-        let body: &'static str = Box::leak("H".repeat(3_000).into_boxed_str());
-        let (base, mut requests) = serve_requests("200 OK", body).await;
-        let stdout = run_hook(
-            &data_dir,
-            grok_hook_args("post-tool-use", &base),
-            grok_tool_payload(tmp.path()),
-        )
-        .await;
-        let envelope: serde_json::Value = serde_json::from_slice(stdout.trim_ascii()).unwrap();
-        let context = envelope["hookSpecificOutput"]["additionalContext"]
-            .as_str()
-            .unwrap();
-        assert_eq!(context.chars().count(), 3_000 + 2 + 3_000);
-        let seen = all_requests(&mut requests).await;
-        let recap = recap_requests(&seen);
-        assert_eq!(recap.len(), 1, "{seen:?}");
-        // 10,000 minus the handoff and the blank line joining them.
-        assert!(recap[0].contains("budget=6998"), "{}", recap[0]);
-    }
-
-    #[tokio::test]
-    async fn grok_recap_waits_for_the_next_tool_when_a_handoff_leaves_no_room() {
-        let tmp = tempfile::tempdir().unwrap();
-        let data_dir = tmp.path().join("data");
-        write_recap_marker(&data_dir, Duration::from_secs(5));
-        let body: &'static str = Box::leak("H".repeat(9_000).into_boxed_str());
-        let (base, mut requests) = serve_requests("200 OK", body).await;
-        let stdout = run_hook(
-            &data_dir,
-            grok_hook_args("post-tool-use", &base),
-            grok_tool_payload(tmp.path()),
-        )
-        .await;
-        let envelope: serde_json::Value = serde_json::from_slice(stdout.trim_ascii()).unwrap();
-        assert_eq!(
-            envelope["hookSpecificOutput"]["additionalContext"]
-                .as_str()
-                .unwrap()
-                .chars()
-                .count(),
-            9_000,
-            "only the handoff"
-        );
-        let seen = all_requests(&mut requests).await;
-        assert!(recap_requests(&seen).is_empty(), "{seen:?}");
-        assert!(
-            data_dir
-                .join("recap-pending")
-                .join("grok-session")
-                .is_file(),
-            "the recap must stay pending"
-        );
-
-        // The next tool result has the whole context to itself.
-        let stdout = run_hook(
-            &data_dir,
-            grok_hook_args("post-tool-use", &base),
-            grok_tool_payload(tmp.path()),
-        )
-        .await;
-        assert!(!stdout.is_empty());
-        let seen = all_requests(&mut requests).await;
-        let recap = recap_requests(&seen);
-        assert_eq!(recap.len(), 1, "{seen:?}");
-        assert!(!recap[0].contains("budget="), "{}", recap[0]);
-        assert!(!data_dir.join("recap-pending").join("grok-session").exists());
-    }
-
-    #[tokio::test]
-    async fn grok_stale_recap_marker_is_ignored() {
-        let tmp = tempfile::tempdir().unwrap();
-        let data_dir = tmp.path().join("data");
-        mark_handoff_shown(&data_dir);
-        write_recap_marker(&data_dir, Duration::from_secs(31 * 60));
-        let (base, mut requests) = serve_requests("200 OK", "RECAP-BODY").await;
-        let stdout = run_hook(
-            &data_dir,
-            grok_hook_args("post-tool-use", &base),
-            grok_tool_payload(tmp.path()),
-        )
-        .await;
-        assert!(!String::from_utf8_lossy(&stdout).contains("RECAP-BODY"));
-        let seen = all_requests(&mut requests).await;
-        assert!(recap_requests(&seen).is_empty(), "{seen:?}");
-        assert!(!data_dir.join("recap-pending").join("grok-session").exists());
-    }
-
-    #[tokio::test]
-    async fn grok_session_end_removes_the_recap_marker() {
-        let tmp = tempfile::tempdir().unwrap();
-        let data_dir = tmp.path().join("data");
-        write_recap_marker(&data_dir, Duration::from_secs(5));
-        run_hook(
-            &data_dir,
-            grok_hook_args("session-end", &dead_server_url()),
-            serde_json::json!({ "session_id": "grok-session", "cwd": tmp.path() }),
-        )
-        .await;
-        assert!(!data_dir.join("recap-pending").join("grok-session").exists());
     }
 }

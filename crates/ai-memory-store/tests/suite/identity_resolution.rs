@@ -1205,7 +1205,7 @@ async fn authorized_write_promotes_in_place_and_preserves_dependents_and_legacy_
             id: session,
             workspace_id: ws,
             project_id: project,
-            agent_kind: AgentKind::Codex,
+            agent_kind: AgentKind::Other,
             cwd: Some("/clone/api".into()),
             actor_user: None,
         })
@@ -1222,7 +1222,7 @@ async fn authorized_write_promotes_in_place_and_preserves_dependents_and_legacy_
             workspace_id: ws,
             project_id: project,
             from_session_id: Some(session),
-            from_agent: AgentKind::Codex,
+            from_agent: AgentKind::Other,
             to_agent: None,
             cwd: Some("/clone/api".into()),
             summary: "continue".into(),

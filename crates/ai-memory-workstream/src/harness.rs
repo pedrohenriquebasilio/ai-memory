@@ -202,18 +202,18 @@ impl ManagedHarness {
     #[must_use]
     pub const fn agent_kind(self) -> AgentKind {
         match self {
-            Self::Claude => AgentKind::ClaudeCode,
-            Self::Codex => AgentKind::Codex,
-            Self::OpenCode | Self::OpenCode2 => AgentKind::OpenCode,
-            Self::Pi => AgentKind::Pi,
-            Self::Crush => AgentKind::Crush,
-            Self::Omp => AgentKind::Omp,
-            Self::Kimi => AgentKind::KimiCode,
-            Self::CommandCode => AgentKind::CommandCode,
-            Self::Kiro | Self::KiroV3 => AgentKind::KiroCli,
-            Self::Grok => AgentKind::Grok,
-            Self::Antigravity => AgentKind::AntigravityCli,
-            Self::Copilot => AgentKind::CopilotCli,
+            Self::Claude => AgentKind::Other,
+            Self::Codex => AgentKind::Other,
+            Self::OpenCode | Self::OpenCode2 => AgentKind::Other,
+            Self::Pi => AgentKind::Other,
+            Self::Crush => AgentKind::Other,
+            Self::Omp => AgentKind::Other,
+            Self::Kimi => AgentKind::Other,
+            Self::CommandCode => AgentKind::Other,
+            Self::Kiro | Self::KiroV3 => AgentKind::Other,
+            Self::Grok => AgentKind::Other,
+            Self::Antigravity => AgentKind::Other,
+            Self::Copilot => AgentKind::Other,
         }
     }
 
@@ -2007,8 +2007,8 @@ mod tests {
         // so `run opencode2` resumes v1 sessions and vice versa.
         assert_eq!(beta.executable(), "opencode2");
         assert_eq!(beta.as_str(), "opencode2");
-        assert_eq!(beta.agent_kind(), AgentKind::OpenCode);
-        assert_eq!(ManagedHarness::OpenCode.agent_kind(), AgentKind::OpenCode);
+        assert_eq!(beta.agent_kind(), AgentKind::Other);
+        assert_eq!(ManagedHarness::OpenCode.agent_kind(), AgentKind::Other);
 
         let plan = build_launch_plan(
             beta,
@@ -3316,7 +3316,7 @@ mod tests {
                 Some(ManagedHarness::Copilot)
             );
         }
-        assert_eq!(ManagedHarness::Copilot.agent_kind(), AgentKind::CopilotCli);
+        assert_eq!(ManagedHarness::Copilot.agent_kind(), AgentKind::Other);
         assert_eq!(ManagedHarness::Copilot.executable(), "copilot");
         assert!(!ManagedHarness::Copilot.lacks_session_end_hook());
     }

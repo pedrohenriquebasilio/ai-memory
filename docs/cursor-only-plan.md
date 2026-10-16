@@ -1,6 +1,11 @@
 # Cursor Desktop-only reduction — scope and phasing plan
 
-Status: **planning**. Branch: `hermes/cursor-desktop-only`. No code removed yet.
+Status: **Phase 2 complete**. Phase 1 shipped on
+`hermes/cursor-desktop-only` (#1); Phase 2 shipped on
+`hermes/cursor-desktop-only-phase2-agentkind` (#2) and collapsed
+`AgentKind` to `{Cursor, Other}` with store migration V84.
+Phase 3 (install/setup/doctor dispatcher collapse, Cursor Desktop launch
++ LaunchAgent) and Phase 4 (docs sweep) are still pending.
 
 ## Goal (from brief)
 

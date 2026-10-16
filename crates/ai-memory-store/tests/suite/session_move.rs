@@ -28,7 +28,7 @@ fn hook_session(id: SessionId, ws: WorkspaceId, proj: ProjectId) -> NewSession {
         id,
         workspace_id: ws,
         project_id: proj,
-        agent_kind: AgentKind::Codex,
+        agent_kind: AgentKind::Other,
         cwd: Some("/repo/app".into()),
         actor_user: None,
     }

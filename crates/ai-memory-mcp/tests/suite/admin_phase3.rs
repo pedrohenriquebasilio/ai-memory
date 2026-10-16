@@ -323,7 +323,7 @@ async fn seed_sessions_for_reorg(store: &Store) -> (SessionId, SessionId) {
             id: sid_a,
             workspace_id: ws,
             project_id: scratch,
-            agent_kind: AgentKind::ClaudeCode,
+            agent_kind: AgentKind::Other,
             cwd: Some(std::path::PathBuf::from("/home/user/alpha-repo")),
             actor_user: None,
         })
@@ -357,7 +357,7 @@ async fn seed_sessions_for_reorg(store: &Store) -> (SessionId, SessionId) {
             id: sid_b,
             workspace_id: ws,
             project_id: scratch,
-            agent_kind: AgentKind::ClaudeCode,
+            agent_kind: AgentKind::Other,
             cwd: Some(std::path::PathBuf::from("/home/user/beta-repo")),
             actor_user: None,
         })
@@ -447,7 +447,7 @@ async fn reorg_never_targets_a_reserved_scope() {
                 id: SessionId::new(),
                 workspace_id: ws,
                 project_id: scratch,
-                agent_kind: AgentKind::ClaudeCode,
+                agent_kind: AgentKind::Other,
                 cwd: Some(std::path::PathBuf::from(dir)),
                 actor_user: None,
             })

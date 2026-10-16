@@ -64,7 +64,7 @@ async fn residue_changes_only_the_provider_request_not_the_stored_page() {
             id: session,
             workspace_id: ws,
             project_id: project,
-            agent_kind: AgentKind::Codex,
+            agent_kind: AgentKind::Other,
             cwd: None,
             actor_user: None,
         })

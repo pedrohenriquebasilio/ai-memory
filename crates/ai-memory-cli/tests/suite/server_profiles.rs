@@ -185,42 +185,6 @@ fn token_dir(data_dir: &Path) -> PathBuf {
     data_dir.join("auth-tokens")
 }
 
-/// The whole path through the binary: register with a token on stdin, the
-/// listing shows the profile without the secret, and a hook in the routed
-/// repository spools to the profile's server with the profile's token.
-#[test]
-fn a_routed_repository_spools_to_its_profile_through_the_binary() {
-    let sb = Sandbox::new();
-    sb.register();
-
-    let listing = sb.run_ok(&["server", "list", "--json"], None);
-    let rows: serde_json::Value = serde_json::from_str(&listing).expect("list json");
-    assert_eq!(rows[0]["name"], "team-b");
-    assert_eq!(rows[0]["url"], PROFILE_SERVER);
-    assert_eq!(rows[0]["token"], "stored");
-    assert!(!listing.contains(SECRET), "{listing}");
-    let human = sb.run_ok(&["server", "list"], None);
-    assert!(!human.contains(SECRET), "{human}");
-
-    sb.write_marker("workspace = \"team-b\"\nserver = \"team-b\"\n");
-    let check = sb.check_capture();
-    assert_eq!(check["server_resolution"], "marker");
-    assert_eq!(check["server_profile"], "team-b");
-    assert!(!check.to_string().contains(SECRET));
-    assert!(!check.to_string().contains("example"), "no URL: {check}");
-
-    let out = sb.hook("user-prompt-submit", false);
-    assert!(out.status.success());
-    assert_eq!(out.stdout, b"{}\n");
-    let entries = sb.spooled_entries();
-    assert_eq!(entries.len(), 1, "{entries:?}");
-    let url = entries[0]["url"].as_str().unwrap();
-    assert!(url.starts_with(&format!("{PROFILE_SERVER}/hook?")), "{url}");
-    assert!(url.contains("workspace=team-b"), "{url}");
-    assert_eq!(entries[0]["token"], SECRET);
-    assert_eq!(entries[0]["profile"], "team-b");
-}
-
 /// Without a `server` key the install default is used and the spooled entry
 /// has no profile field at all.
 #[test]
@@ -242,32 +206,6 @@ fn an_unrouted_repository_keeps_the_install_default_through_the_binary() {
     );
     assert!(entries[0].get("profile").is_none(), "{:?}", entries[0]);
     assert!(entries[0].get("token").is_none(), "{:?}", entries[0]);
-}
-
-/// A selection that does not resolve emits nothing: no spool entry, a
-/// warning on stderr that names the profile but not a URL or token, and a
-/// `--check-capture` that reports the reason.
-#[test]
-fn an_unknown_profile_drops_the_event_through_the_binary() {
-    let sb = Sandbox::new();
-    sb.register();
-    sb.write_marker("server = \"nobody\"\n");
-
-    assert_eq!(
-        sb.check_capture()["server_resolution"],
-        "rejected-unknown-profile"
-    );
-    let out = sb.hook("user-prompt-submit", false);
-    assert!(out.status.success());
-    assert_eq!(out.stdout, b"{}\n");
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("`nobody`"), "{stderr}");
-    assert!(stderr.contains("rejected-unknown-profile"), "{stderr}");
-    assert!(
-        !stderr.contains("example") && !stderr.contains(SECRET),
-        "{stderr}"
-    );
-    assert!(sb.spooled_entries().is_empty());
 }
 
 /// A real `ai-memory serve` child on a free loopback port with its own data

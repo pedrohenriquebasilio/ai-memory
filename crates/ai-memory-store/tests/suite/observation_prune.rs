@@ -87,7 +87,7 @@ fn seed(conn: &Connection) {
             "INSERT INTO sessions \
              (id, workspace_id, project_id, agent_kind, cwd, started_at, ended_at, \
               summary_page_id, ended_observation_count) \
-             VALUES (?1, ?2, ?3, 'claude-code', '/w/proj', ?4, ?5, ?6, 3)",
+             VALUES (?1, ?2, ?3, 'cursor', '/w/proj', ?4, ?5, ?6, 3)",
             params![
                 &id(n)[..],
                 &ws[..],

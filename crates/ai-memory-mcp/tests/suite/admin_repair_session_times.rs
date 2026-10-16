@@ -76,7 +76,7 @@ async fn seed_session(store: &Store, workspace: &str, project: &str, ended: bool
             id: sid,
             workspace_id: ws,
             project_id: proj,
-            agent_kind: AgentKind::ClaudeCode,
+            agent_kind: AgentKind::Other,
             cwd: None,
             actor_user: None,
             occurred_at: None,

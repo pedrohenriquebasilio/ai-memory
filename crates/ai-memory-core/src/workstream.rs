@@ -504,7 +504,7 @@ mod tests {
     #[test]
     fn older_workstream_event_has_no_provenance() {
         let event: WorkstreamEvent = serde_json::from_value(serde_json::json!({
-            "sequence": 1, "event_id": "event-1", "agent": "codex",
+            "sequence": 1, "event_id": "event-1", "agent": "cursor",
             "native_session_id": "native-1", "kind": "message", "content": "visible",
         }))
         .unwrap();
@@ -533,7 +533,7 @@ mod tests {
         let status: ManagedRunStatus = serde_json::from_value(serde_json::json!({
             "run_id": "018f0000-0000-7000-8000-000000000002",
             "workstream_id": "018f0000-0000-7000-8000-000000000001",
-            "agent": "codex",
+            "agent": "cursor",
             "native_session_id": "prepared",
             "context_delivered": false,
             "state": "active"
@@ -567,7 +567,7 @@ mod tests {
             "workstream_name": "default",
             "run_id": "018f0000-0000-7000-8000-000000000002",
             "previous_native_session": {
-                "agent": "claude-code",
+                "agent": "cursor",
                 "native_session_id": "session-1"
             },
             "sync_after": 0,
@@ -578,7 +578,7 @@ mod tests {
         assert_eq!(
             response.previous_native_session,
             Some(ManagedNativeSessionReference {
-                agent: AgentKind::ClaudeCode,
+                agent: AgentKind::Cursor,
                 native_session_id: "session-1".into(),
             })
         );
@@ -595,7 +595,7 @@ mod tests {
             "cwd": "/repo",
             "repo_fingerprint": "repo",
             "worktree_fingerprint": "worktree",
-            "agent": "codex",
+            "agent": "cursor",
             "lease_owner": "host:1"
         }))
         .unwrap();
@@ -613,7 +613,7 @@ mod tests {
             "cwd": "/repo",
             "repo_fingerprint": "repo",
             "worktree_fingerprint": "worktree",
-            "agent": "codex",
+            "agent": "cursor",
             "force_unlock": true,
             "lease_owner": "host:2"
         }))

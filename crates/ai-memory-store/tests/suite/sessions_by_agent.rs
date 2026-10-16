@@ -67,11 +67,11 @@ async fn counts_group_by_agent_and_order_deterministically() {
     let (ws, proj) = scope(&store).await;
 
     for _ in 0..3 {
-        session(&store, ws, proj, AgentKind::ClaudeCode, None).await;
+        session(&store, ws, proj, AgentKind::Other, None).await;
     }
     // `codex` and `cursor` tie at one session each.
     session(&store, ws, proj, AgentKind::Cursor, None).await;
-    session(&store, ws, proj, AgentKind::Codex, None).await;
+    session(&store, ws, proj, AgentKind::Other, None).await;
 
     let counts = store
         .reader
@@ -85,7 +85,7 @@ async fn counts_group_by_agent_and_order_deterministically() {
         .collect();
     assert_eq!(
         seen,
-        vec![("claude-code", 3), ("codex", 1), ("cursor", 1)],
+        vec![("other", 4), ("cursor", 1)],
         "count desc, then agent name asc",
     );
 
@@ -105,7 +105,7 @@ async fn since_bounds_the_window() {
     let tmp = tempfile::tempdir().unwrap();
     let store = Store::open(tmp.path()).unwrap();
     let (ws, proj) = scope(&store).await;
-    session(&store, ws, proj, AgentKind::ClaudeCode, None).await;
+    session(&store, ws, proj, AgentKind::Other, None).await;
 
     let all = store
         .reader
@@ -132,17 +132,10 @@ async fn counts_are_scoped_to_the_asking_operator() {
     let store = Store::open(tmp.path()).unwrap();
     let (ws, proj) = scope(&store).await;
 
-    session(
-        &store,
-        ws,
-        proj,
-        AgentKind::ClaudeCode,
-        Some(operator("alice")),
-    )
-    .await;
+    session(&store, ws, proj, AgentKind::Other, Some(operator("alice"))).await;
     session(&store, ws, proj, AgentKind::Cursor, Some(operator("bob"))).await;
     // Written before the server distinguished operators.
-    session(&store, ws, proj, AgentKind::Codex, None).await;
+    session(&store, ws, proj, AgentKind::Other, None).await;
 
     let alice = store
         .reader
@@ -152,7 +145,7 @@ async fn counts_are_scoped_to_the_asking_operator() {
     let alice_agents: Vec<&str> = alice.iter().map(|c| c.agent.as_str()).collect();
     assert_eq!(
         alice_agents,
-        vec!["claude-code", "codex"],
+        vec!["other"],
         "own rows plus shared rows, never bob's",
     );
 
@@ -163,7 +156,7 @@ async fn counts_are_scoped_to_the_asking_operator() {
         .unwrap();
     assert_eq!(
         everyone.len(),
-        3,
+        2,
         "the recovery switch reports all operators"
     );
 }
@@ -178,14 +171,7 @@ async fn an_unidentified_caller_sees_only_shared_rows() {
     let store = Store::open(tmp.path()).unwrap();
     let (ws, proj) = scope(&store).await;
 
-    session(
-        &store,
-        ws,
-        proj,
-        AgentKind::ClaudeCode,
-        Some(operator("alice")),
-    )
-    .await;
+    session(&store, ws, proj, AgentKind::Other, Some(operator("alice"))).await;
     session(&store, ws, proj, AgentKind::Cursor, None).await;
 
     let anonymous = OwnerFilter::for_actor_context(&ActorContext::anonymous());

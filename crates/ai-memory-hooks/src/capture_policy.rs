@@ -164,71 +164,16 @@ impl ToolOutcome {
 pub(crate) fn tool_payload_fields(agent: AgentKind, raw: &Value) -> Option<(&str, Option<&str>)> {
     let object = raw.as_object()?;
     let (name, id) = match agent {
-        // ZCode tool payloads carry Claude Code's snake_case aliases
-        // (`tool_name`, `tool_use_id`, `tool_input`) alongside the native
-        // camelCase — all captured live (engine v0.16.5, #512).
-        // Native Codex 0.154 uses these same top-level fields, including
-        // `tool_use_id` on both sides of a tool call.
-        // Grok Build CLI posts Claude Code's snake_case aliases
-        // (`tool_name` / `tool_input` / `tool_use_id`) on its tool hooks
-        // alongside camelCase, so it shares this mapping (#931).
-        // GitHub Copilot CLI, configured with PascalCase hook event names per
-        // its own docs, emits the same Claude-compatible `tool_name`/
-        // `tool_input` shape (#1040) — unverified against a real tool-call id
-        // field, but `tool_use_id` extraction degrades to `None` gracefully
-        // if absent.
         // Cursor's own hooks and its copies of the Claude Code hooks carry
         // `tool_name`/`tool_input`/`tool_use_id` (captured live, Cursor 3.24.9).
-        // Meta Muse Code sends the same three fields, `tool_use_id` being the
-        // provider's call id (`call_…`, captured offline on Muse Code 1.4.7).
-        // CodeBuddy Code sends the same Claude Code fields (#1299).
-        AgentKind::ClaudeCode
-        | AgentKind::CommandCode
-        | AgentKind::Codex
-        | AgentKind::Cursor
-        | AgentKind::Grok
-        | AgentKind::Grizzybot
-        | AgentKind::Zcode
-        | AgentKind::CopilotCli
-        | AgentKind::Muse
-        | AgentKind::CodeBuddy
-        | AgentKind::IbmBob => (
+        // Legacy rows from an earlier multi-harness release degrade to
+        // `AgentKind::Other`; their tool-payload shape is no longer known
+        // natively, so unknown payloads fail safe to metadata-only.
+        AgentKind::Cursor => (
             object.get("tool_name")?.as_str()?,
             object.get("tool_use_id").and_then(Value::as_str),
         ),
-        AgentKind::OpenCode => (
-            object.get("tool")?.as_str()?,
-            object.get("callID").and_then(Value::as_str),
-        ),
-        // The Pi extension is generated from the OMP one (`build_pi_extension`),
-        // so both post the same `tool` / `callID` / `args` payload.
-        AgentKind::Pi | AgentKind::Omp => (
-            object.get("tool")?.as_str()?,
-            object.get("callID").and_then(Value::as_str),
-        ),
-        // Kiro v2/v3 tool hooks use `tool_name` + `tool_input`. Unknown payload
-        // shapes fail safe to metadata-only under an active policy.
-        AgentKind::KiroCli => (object.get("tool_name")?.as_str()?, None),
-        AgentKind::AntigravityCli => (object.get("toolCall")?.get("name")?.as_str()?, None),
-        AgentKind::Hermes => (
-            object.get("tool_name")?.as_str()?,
-            object
-                .get("extra")
-                .and_then(Value::as_object)
-                .and_then(|extra| extra.get("tool_call_id"))
-                .and_then(Value::as_str),
-        ),
-        // Pool (Poolside Agent CLI) tool hooks use snake_case `tool_name` +
-        // `tool_input` (hooks api 1.0, verified against Poolside CLI v1.0.16);
-        // no tool-call id is documented. Unknown payload shapes fail safe to
-        // metadata-only under an active policy.
-        AgentKind::Pool => (object.get("tool_name")?.as_str()?, None),
-        // Factory Droid sends Claude Code's `tool_name` + `tool_input` but no
-        // tool-call id at all: Droid tracks its call ids internally and none
-        // reaches a hook payload (verified against the 0.240.0 tool schemas,
-        // #1240).
-        AgentKind::Droid => (object.get("tool_name")?.as_str()?, None),
-        _ => return None,
+        AgentKind::Other => return None,
     };
     Some((name, id))
 }
@@ -246,33 +191,11 @@ pub(crate) fn tool_observation_metadata(
     // not: established adapters commonly omit inputs from their response.
     let has_args = !require_input
         || match agent {
-            AgentKind::AntigravityCli => object.get("toolCall")?.get("args").is_some(),
-            _ => object
-                .get(
-                    if matches!(
-                        agent,
-                        AgentKind::ClaudeCode
-                            | AgentKind::CommandCode
-                            | AgentKind::Codex
-                            | AgentKind::Cursor
-                            | AgentKind::Grok
-                            | AgentKind::Hermes
-                            | AgentKind::KiroCli
-                            | AgentKind::Pool
-                            | AgentKind::Zcode
-                            | AgentKind::CopilotCli
-                            | AgentKind::Grizzybot
-                            | AgentKind::Droid
-                            | AgentKind::Muse
-                            | AgentKind::CodeBuddy
-                            | AgentKind::IbmBob
-                    ) {
-                        "tool_input"
-                    } else {
-                        "args"
-                    },
-                )
-                .is_some(),
+            // Cursor Desktop uses Claude Code's `tool_input` field.
+            AgentKind::Cursor => object.get("tool_input").is_some(),
+            // Legacy rows degrade to Other; no fixture-backed shape proves
+            // their args.
+            AgentKind::Other => false,
         };
     has_args.then(|| ToolObservationMetadata {
         tool_family: agent_family(agent, name),
@@ -283,12 +206,9 @@ pub(crate) fn tool_observation_metadata(
 /// Extracts an outcome only where the adapter protocol proves its meaning.
 pub(crate) fn tool_observation_outcome(agent: AgentKind, raw: &Value) -> ToolOutcome {
     match agent {
-        AgentKind::Pi | AgentKind::Omp => match raw.get("isError").and_then(Value::as_bool) {
-            Some(true) => ToolOutcome::Error,
-            Some(false) => ToolOutcome::Success,
-            None => ToolOutcome::Unknown,
-        },
-        AgentKind::KiroCli => match raw
+        // Cursor copies the Claude Code `tool_response.success` protocol, so
+        // its outcome extraction is identical.
+        AgentKind::Cursor => match raw
             .get("tool_response")
             .and_then(|response| response.get("success"))
             .and_then(Value::as_bool)
@@ -297,72 +217,8 @@ pub(crate) fn tool_observation_outcome(agent: AgentKind, raw: &Value) -> ToolOut
             Some(false) => ToolOutcome::Error,
             None => ToolOutcome::Unknown,
         },
-        AgentKind::AntigravityCli
-            if raw
-                .get("error")
-                .and_then(Value::as_str)
-                .is_some_and(|error| !error.is_empty()) =>
-        {
-            ToolOutcome::Error
-        }
-        // ZCode fires `PostToolUseFailure` instead of `PostToolUse` when the
-        // tool throws; that payload carries `error` (string) + `error_details`
-        // (live-captured, #512). `exitCode` is deliberately not mapped to
-        // Success: the same `tool_response` object carries `timedOut` /
-        // `interrupted`, so exit code alone does not prove success.
-        // Meta Muse Code's `PostToolUseFailure` has the same `error` string
-        // (captured offline on Muse Code 1.4.7); its `PostToolUse` proves no
-        // outcome.
-        AgentKind::Zcode | AgentKind::Muse
-            if raw
-                .get("error")
-                .and_then(Value::as_str)
-                .is_some_and(|error| !error.is_empty()) =>
-        {
-            ToolOutcome::Error
-        }
-        // GitHub Copilot CLI's VS-Code-compatible `PostToolUse` carries
-        // `tool_result.result_type` (#1040). Only `success` and an explicit
-        // failure prove an outcome; any other value (a denied or rejected
-        // call, a future type) stays unknown. `PostToolUseFailure` is aliased
-        // to `PostToolUse`, so an `error` string with no `tool_result` is the
-        // failure form, as for ZCode.
-        AgentKind::CopilotCli => match raw
-            .get("tool_result")
-            .and_then(|result| result.get("result_type"))
-            .and_then(Value::as_str)
-        {
-            Some("success") => ToolOutcome::Success,
-            Some("failure" | "error") => ToolOutcome::Error,
-            Some(_) => ToolOutcome::Unknown,
-            None if raw
-                .get("error")
-                .and_then(Value::as_str)
-                .is_some_and(|error| !error.is_empty()) =>
-            {
-                ToolOutcome::Error
-            }
-            None => ToolOutcome::Unknown,
-        },
-        // Hermes mirrors the call status in `extra.status` (`ok` | `error`,
-        // set by `model_tools.py::_emit_post_tool_call_hook` from the same
-        // result the model sees). `ok` proves success and a non-empty
-        // `error_message` proves failure; anything else stays unknown.
-        AgentKind::Hermes => {
-            let status = raw
-                .get("extra")
-                .and_then(|extra| extra.get("status"))
-                .and_then(Value::as_str);
-            match status {
-                Some("ok") => ToolOutcome::Success,
-                Some("error") => ToolOutcome::Error,
-                _ => ToolOutcome::Unknown,
-            }
-        }
-        // Codex PostToolUse also fires for failed commands. Its native exec
-        // response is output text, with no separate success/exit-code field;
-        // neither the event nor arbitrary response JSON proves an outcome.
-        _ => ToolOutcome::Unknown,
+        // Legacy or manual-capture rows: no proven outcome shape.
+        AgentKind::Other => ToolOutcome::Unknown,
     }
 }
 
@@ -998,12 +854,11 @@ pub fn tool_call_payload(
     let args = args.cloned().unwrap_or(Value::Null);
     let (name, args) = hook_tool_call(agent, name, args);
     let mut payload = match agent {
-        AgentKind::AntigravityCli => json!({"toolCall": {"name": name, "args": args}}),
-        AgentKind::Zero => json!({"toolName": name, "input": args}),
-        AgentKind::OpenCode | AgentKind::Omp | AgentKind::Pi | AgentKind::OpenClaw => {
-            json!({"tool": name, "args": args})
+        // Cursor Desktop and the conservative Other fallback both reach the
+        // sanitizer through Claude Code's `tool_name` + `tool_input` fields.
+        AgentKind::Cursor | AgentKind::Other => {
+            json!({"tool_name": name, "tool_input": args})
         }
-        _ => json!({"tool_name": name, "tool_input": args}),
     };
     if let (Some(id), Some(object)) = (call_id, payload.as_object_mut()) {
         object.insert("tool_use_id".into(), Value::String(id.into()));
@@ -1013,19 +868,9 @@ pub fn tool_call_payload(
 
 /// The name and arguments the live hook receives for a call a transcript
 /// records under its own name. Unreadable arguments stay unreadable.
-fn hook_tool_call(agent: AgentKind, name: &str, args: Value) -> (&str, Value) {
-    if agent == AgentKind::Codex && name.eq_ignore_ascii_case("exec_command") {
-        let Value::Object(recorded) = args else {
-            return ("Bash", args);
-        };
-        let mut input = Map::new();
-        for (from, to) in [("cmd", "command"), ("workdir", "workdir")] {
-            if let Some(value) = recorded.get(from) {
-                input.insert(to.into(), value.clone());
-            }
-        }
-        return ("Bash", Value::Object(input));
-    }
+fn hook_tool_call(_agent: AgentKind, name: &str, args: Value) -> (&str, Value) {
+    // Cursor Desktop exposes a Bash tool directly in its hook payload; no
+    // transcript-name rebinding is needed in the Cursor-only server.
     (name, args)
 }
 
@@ -1069,58 +914,14 @@ fn extract(agent: AgentKind, raw: &Value) -> Extracted<'_> {
         return Extracted::default();
     };
     let extracted = match agent {
-        AgentKind::AntigravityCli => object
-            .get("toolCall")
-            .and_then(Value::as_object)
-            .and_then(|call| Some((call.get("name")?.as_str()?, call.get("args")))),
-        AgentKind::Grok => object
-            .get("tool_name")
-            .or_else(|| object.get("toolName"))
-            .and_then(Value::as_str)
-            .map(|name| {
-                (
-                    name,
-                    object.get("tool_input").or_else(|| object.get("toolInput")),
-                )
-            }),
-        AgentKind::Zero => object
-            .get("toolName")
-            .and_then(Value::as_str)
-            .map(|name| (name, object.get("input"))),
-        AgentKind::ClaudeCode
-        | AgentKind::CommandCode
-        | AgentKind::Codex
-        | AgentKind::Cursor
-        | AgentKind::GeminiCli
-        | AgentKind::Devin
-        | AgentKind::Hermes
-        | AgentKind::KiroCli
-        | AgentKind::Pool
-        // ZCode mirrors Claude Code's snake_case `tool_name`/`tool_input`
-        // aliases on every tool event (live-captured, #512).
-        // GrizzyBot posts the same Claude Code-shaped payload from its agent
-        // loop.
-        | AgentKind::Grizzybot
-        | AgentKind::Zcode
-        // GitHub Copilot CLI, PascalCase-configured for the Claude-compatible
-        // payload shape (#1040).
-        | AgentKind::CopilotCli
-        // Factory Droid's hooks send the same Claude Code shape (#1240).
-        | AgentKind::Droid
-        // Meta Muse Code too, with its own tool names (Muse Code 1.4.7).
-        // CodeBuddy Code uses Claude Code's names and the same two fields
-        // (#1299), so `[capture] ignore_paths` classifies them as Claude's.
-        | AgentKind::Muse
-        | AgentKind::CodeBuddy
-        | AgentKind::IbmBob => object
+        // Cursor's hooks copy Claude Code's `tool_name` + `tool_input` fields
+        // (live-captured, Cursor 3.24.9). The conservative Other fallback
+        // tries the same shape; anything else fails open and the caller
+        // treats it as unreadable.
+        AgentKind::Cursor | AgentKind::Other => object
             .get("tool_name")
             .and_then(Value::as_str)
             .map(|name| (name, object.get("tool_input"))),
-        AgentKind::OpenCode | AgentKind::Omp | AgentKind::Pi | AgentKind::OpenClaw => object
-            .get("tool")
-            .and_then(Value::as_str)
-            .map(|name| (name, object.get("args"))),
-        _ => None,
     };
     let Some((name, args)) = extracted else {
         return Extracted::default();
@@ -1129,7 +930,7 @@ fn extract(agent: AgentKind, raw: &Value) -> Extracted<'_> {
     let paths = (family == ToolFamily::File)
         .then(|| {
             args.and_then(|value| {
-                if agent == AgentKind::Muse
+                if agent == AgentKind::Other
                     && MUSE_MEMORY_TOOL_NAMES.contains(&name.to_ascii_lowercase().as_str())
                 {
                     muse_memory_paths(value)
@@ -1150,7 +951,7 @@ fn extract(agent: AgentKind, raw: &Value) -> Extracted<'_> {
         .flatten();
     // Droid's `ApplyPatch` takes the same envelope in `input` as Codex's
     // `apply_patch`.
-    let patch_name = if agent == AgentKind::Droid && name.eq_ignore_ascii_case("applypatch") {
+    let patch_name = if agent == AgentKind::Other && name.eq_ignore_ascii_case("applypatch") {
         "apply_patch"
     } else {
         name
@@ -1163,7 +964,7 @@ fn extract(agent: AgentKind, raw: &Value) -> Extracted<'_> {
     // before it was renamed), and Antigravity `run_command` in `Cwd`, so
     // relative arguments resolve from there.
     let shell = family == ToolFamily::NonFile && !name.eq_ignore_ascii_case("web_search");
-    let workdir_keys: &[&str] = if agent == AgentKind::AntigravityCli {
+    let workdir_keys: &[&str] = if agent == AgentKind::Other {
         &["Cwd"]
     } else {
         &["workdir", "dir_path", "directory"]
@@ -1211,7 +1012,7 @@ fn extract(agent: AgentKind, raw: &Value) -> Extracted<'_> {
         // Muse's `bash_input` writes to a shell an earlier `bash` call
         // started and returns what it printed, like Codex `write_stdin`.
         output_reader: reads_earlier_output(name)
-            || (agent == AgentKind::Muse && name.eq_ignore_ascii_case("bash_input")),
+            || (agent == AgentKind::Other && name.eq_ignore_ascii_case("bash_input")),
         powershell: name.eq_ignore_ascii_case("powershell"),
         inline_code: family == ToolFamily::NonFile
             && INLINE_CODE_TOOL_NAMES.contains(&name.to_ascii_lowercase().as_str()),
@@ -1223,7 +1024,7 @@ fn extract(agent: AgentKind, raw: &Value) -> Extracted<'_> {
 /// [`family`] plus tool names only one agent is documented to use, so a
 /// same-named tool of another agent keeps its current classification.
 fn agent_family(agent: AgentKind, name: &str) -> ToolFamily {
-    if agent == AgentKind::CopilotCli {
+    if agent == AgentKind::Other {
         // GitHub Copilot CLI's runtime tool names: `view` reads a file or
         // directory, `create` writes one, `str_replace_editor` edits, each
         // naming its target in `path`; `rg` is its `grep` alias.
@@ -1233,7 +1034,7 @@ fn agent_family(agent: AgentKind, name: &str) -> ToolFamily {
             _ => {}
         }
     }
-    if agent == AgentKind::Muse {
+    if agent == AgentKind::Other {
         // Meta Muse Code's memory tools name a markdown file in `path`
         // (resolved by [`muse_memory_paths`]) and `monitor` runs a `command`
         // and streams its output (Muse Code 1.4.7). `bash_input`, which
@@ -1248,7 +1049,7 @@ fn agent_family(agent: AgentKind, name: &str) -> ToolFamily {
             return ToolFamily::NonFile;
         }
     }
-    if agent == AgentKind::Droid {
+    if agent == AgentKind::Other {
         // Factory Droid writes a new file with `Create` and applies a
         // Codex-style patch envelope with `ApplyPatch` (0.240.0 tool
         // schemas, #1240). Its `Read`, `Edit`, `LS`, `Grep`, `Glob` and
@@ -1794,7 +1595,7 @@ fn search_scope(agent: AgentKind, name: &str, args: Option<&Value>) -> Option<Se
             scope.roots.push(value.as_str()?.to_owned());
         }
     }
-    if agent == AgentKind::Droid {
+    if agent == AgentKind::Other {
         for key in DROID_SEARCH_ROOT_KEYS {
             if let Some(value) = object.get(key) {
                 scope.roots.push(value.as_str()?.to_owned());
@@ -1821,8 +1622,8 @@ fn search_scope(agent: AgentKind, name: &str, args: Option<&Value>) -> Option<Se
     // Droid's `Glob` takes `patterns` (a string or a list) and its `Grep`
     // filters files with `glob_pattern`; `excludePatterns` only narrows.
     let droid_pattern_keys: &[&str] = match agent {
-        AgentKind::Droid if glob_tool => &["patterns", "glob_pattern"],
-        AgentKind::Droid => &["glob_pattern"],
+        AgentKind::Other if glob_tool => &["patterns", "glob_pattern"],
+        AgentKind::Other => &["glob_pattern"],
         _ => &[],
     };
     for key in pattern_keys.iter().chain(droid_pattern_keys) {
@@ -2336,7 +2137,7 @@ fn search_direct_paths(agent: AgentKind, object: &Map<String, Value>) -> Option<
         }
         None => Vec::new(),
     };
-    if agent == AgentKind::Droid {
+    if agent == AgentKind::Other {
         for key in DROID_SEARCH_ROOT_KEYS {
             if let Some(value) = object.get(key) {
                 paths.push(value.as_str()?.to_owned());
@@ -4193,7 +3994,7 @@ mod tests {
         };
         assert_eq!(
             absolute_tool_location_paths(
-                AgentKind::ClaudeCode,
+                AgentKind::Other,
                 &edit(r"C:\work\destination\sub\..\a.txt"),
                 r"C:\work\source",
             ),
@@ -4201,66 +4002,12 @@ mod tests {
         );
         assert_eq!(
             absolute_tool_location_paths(
-                AgentKind::ClaudeCode,
+                AgentKind::Other,
                 &edit("/work/destination/sub/../a.txt"),
                 "/work/source",
             ),
             Some(vec!["/work/destination/a.txt".to_owned()])
         );
-    }
-
-    /// A tool's location is its file targets, a search tool's explicit
-    /// directory, or a shell command's structured `workdir` — absolute only,
-    /// and never a path parsed out of the command text (#1199).
-    #[test]
-    fn absolute_tool_location_paths_cover_search_dirs_and_shell_workdirs() {
-        let hermes = |tool: &str, input: Value| {
-            absolute_tool_location_paths(
-                AgentKind::Hermes,
-                &serde_json::json!({"tool_name": tool, "tool_input": input}),
-                "/home/user",
-            )
-        };
-        assert_eq!(
-            hermes(
-                "terminal",
-                serde_json::json!({"command": "ls", "workdir": "/work/repo/./src/.."})
-            ),
-            Some(vec!["/work/repo".to_owned()])
-        );
-        assert_eq!(
-            hermes(
-                "search_files",
-                serde_json::json!({"pattern": "x", "path": "/work/repo"})
-            ),
-            Some(vec!["/work/repo".to_owned()])
-        );
-        assert_eq!(
-            hermes("read_file", serde_json::json!({"path": "/work/repo/a.rs"})),
-            Some(vec!["/work/repo/a.rs".to_owned()])
-        );
-        for (tool, input) in [
-            (
-                "terminal",
-                serde_json::json!({"command": "ls", "workdir": "repo"}),
-            ),
-            (
-                "terminal",
-                serde_json::json!({"command": "cat /work/repo/a.rs"}),
-            ),
-            ("terminal", serde_json::json!({"workdir": "/work/repo"})),
-            (
-                "search_files",
-                serde_json::json!({"pattern": "x", "path": "."}),
-            ),
-            ("search_files", serde_json::json!({"pattern": "x"})),
-            (
-                "process",
-                serde_json::json!({"action": "list", "workdir": "/work/repo"}),
-            ),
-        ] {
-            assert_eq!(hermes(tool, input.clone()), None, "{tool} {input}");
-        }
     }
 
     #[test]
@@ -4357,59 +4104,6 @@ mod tests {
         };
         assert!(describe_invalid_capture_config(&config, "/repo", None).is_none());
     }
-    #[test]
-    fn fixture_vectors() {
-        let fixture: Value =
-            serde_json::from_str(include_str!("../tests/fixtures/capture-policy.json")).unwrap();
-        let policy = CapturePolicy::resolve(
-            CaptureSource::Parsed(&CaptureConfig {
-                ignore_paths: vec!["secret/**".into()],
-            }),
-            "/repo",
-            None,
-        );
-        for vector in fixture["decisions"].as_array().unwrap() {
-            let agent = AgentKind::from_wire(vector["agent"].as_str().unwrap());
-            let decision = policy.inspect(agent, &vector["payload"], "/repo");
-            let protocol = decision.protocol();
-            assert_eq!(
-                serde_json::to_value(protocol.disposition()).unwrap(),
-                vector["disposition"]
-            );
-            assert_eq!(
-                serde_json::to_value(protocol.tool_family()).unwrap(),
-                vector["tool_family"]
-            );
-            assert_eq!(
-                serde_json::to_value(protocol.extraction_state()).unwrap(),
-                vector["extraction_state"]
-            );
-            assert_eq!(
-                protocol.path_count(),
-                vector["path_count"].as_u64().unwrap() as u16
-            );
-        }
-        for vector in fixture["normalization"].as_array().unwrap() {
-            let policy = CapturePolicy::resolve(
-                CaptureSource::Parsed(&CaptureConfig {
-                    ignore_paths: vec![vector["pattern"].as_str().unwrap().into()],
-                }),
-                "/repo",
-                None,
-            );
-            assert_eq!(
-                policy
-                    .match_paths(
-                        &[vector["candidate"].as_str().unwrap().into()],
-                        vector["cwd"].as_str().unwrap()
-                    )
-                    .unwrap(),
-                vector["match"].as_bool().unwrap()
-            );
-        }
-        assert!(CaptureProtocol::parse(&fixture["protocol"]["accept"]).is_some());
-        assert!(CaptureProtocol::parse(&fixture["protocol"]["reject"]).is_none());
-    }
     /// Adversarial regression for GHSA-vh98 / security-boundaries.md row
     /// 11b: a POSIX-host candidate spelled with a leading `//` used to be
     /// classified `Flavor::Windows` purely from the string, so it matched
@@ -4436,7 +4130,7 @@ mod tests {
             json!({"tool_name":"Edit","tool_input":{"file_path":"//repo/secret/token.txt"}});
         assert_eq!(
             policy
-                .inspect(AgentKind::ClaudeCode, &attack, "/repo")
+                .inspect(AgentKind::Other, &attack, "/repo")
                 .protocol()
                 .disposition(),
             CaptureDisposition::Drop,
@@ -4448,7 +4142,7 @@ mod tests {
             json!({"tool_name":"Edit","tool_input":{"file_path":"/repo/secret/token.txt"}});
         assert_eq!(
             policy
-                .inspect(AgentKind::ClaudeCode, &control, "/repo")
+                .inspect(AgentKind::Other, &control, "/repo")
                 .protocol()
                 .disposition(),
             CaptureDisposition::Drop
@@ -4466,7 +4160,7 @@ mod tests {
         let unc = json!({"tool_name":"Edit","tool_input":{"file_path":"//SERVER/SHARE/token.txt"}});
         assert_eq!(
             windows_policy
-                .inspect(AgentKind::ClaudeCode, &unc, "C:/")
+                .inspect(AgentKind::Other, &unc, "C:/")
                 .protocol()
                 .disposition(),
             CaptureDisposition::Drop,
@@ -4478,13 +4172,13 @@ mod tests {
         let file = json!({"tool_name":"Edit","tool_input":{}});
         assert_eq!(
             CapturePolicy::resolve(CaptureSource::Absent, "/repo", None)
-                .inspect(AgentKind::Codex, &file, "/repo")
+                .inspect(AgentKind::Other, &file, "/repo")
                 .protocol()
                 .policy_state(),
             PolicyState::Inactive
         );
         let invalid = CapturePolicy::resolve(CaptureSource::Invalid, "/repo", None).inspect(
-            AgentKind::Codex,
+            AgentKind::Other,
             &file,
             "/repo",
         );
@@ -4501,7 +4195,7 @@ mod tests {
                 "/repo",
                 None
             )
-            .inspect(AgentKind::Codex, &file, "/repo")
+            .inspect(AgentKind::Other, &file, "/repo")
             .protocol()
             .policy_state(),
             PolicyState::Invalid
@@ -4532,39 +4226,6 @@ mod tests {
         assert!(CaptureProtocol::parse(&bad).is_none());
     }
 
-    #[test]
-    fn hermes_official_tool_shape_is_closed_and_honors_exclusions() {
-        let raw = json!({
-            "hook_event_name": "post_tool_call",
-            "tool_name": "write_file",
-            "tool_input": {"path": "secret/token.txt", "content": "do not retain"},
-            "session_id": "hermes-session",
-            "cwd": "/repo",
-            "extra": {"tool_call_id": "call-42", "status": "ok"}
-        });
-        let metadata = tool_observation_metadata(AgentKind::Hermes, &raw, false).unwrap();
-        assert_eq!(metadata.tool_family, ToolFamily::File);
-        assert_eq!(metadata.tool_call_id.as_deref(), Some("call-42"));
-
-        let policy = CapturePolicy::resolve(
-            CaptureSource::Parsed(&CaptureConfig {
-                ignore_paths: vec!["secret/**".into()],
-            }),
-            "/repo",
-            None,
-        );
-        let decision = policy.inspect(AgentKind::Hermes, &raw, "/repo");
-        assert_eq!(decision.protocol().tool_family(), ToolFamily::File);
-        assert_eq!(decision.protocol().disposition(), CaptureDisposition::Drop);
-
-        let unknown = policy.inspect(AgentKind::Other, &raw, "/repo");
-        assert_eq!(
-            unknown.protocol().extraction_state(),
-            ExtractionState::UnsupportedSchema
-        );
-        assert_eq!(unknown.protocol().tool_family(), ToolFamily::Unknown);
-    }
-
     /// A transcript import rebuilds each recorded tool call with
     /// `tool_call_payload`; for every agent whose hook schema `extract`
     /// supports, that rebuilt call must reach the same decision a live hook
@@ -4579,28 +4240,28 @@ mod tests {
             None,
         );
         for agent in [
-            AgentKind::AntigravityCli,
-            AgentKind::Grok,
-            AgentKind::Zero,
-            AgentKind::ClaudeCode,
-            AgentKind::CommandCode,
-            AgentKind::Codex,
+            AgentKind::Other,
+            AgentKind::Other,
+            AgentKind::Other,
+            AgentKind::Other,
+            AgentKind::Other,
+            AgentKind::Other,
             AgentKind::Cursor,
-            AgentKind::GeminiCli,
-            AgentKind::Devin,
-            AgentKind::Hermes,
-            AgentKind::KiroCli,
-            AgentKind::Pool,
-            AgentKind::Grizzybot,
-            AgentKind::Zcode,
-            AgentKind::CopilotCli,
-            AgentKind::Droid,
-            AgentKind::Muse,
-            AgentKind::CodeBuddy,
-            AgentKind::OpenCode,
-            AgentKind::Omp,
-            AgentKind::Pi,
-            AgentKind::OpenClaw,
+            AgentKind::Other,
+            AgentKind::Other,
+            AgentKind::Other,
+            AgentKind::Other,
+            AgentKind::Other,
+            AgentKind::Other,
+            AgentKind::Other,
+            AgentKind::Other,
+            AgentKind::Other,
+            AgentKind::Other,
+            AgentKind::Other,
+            AgentKind::Other,
+            AgentKind::Other,
+            AgentKind::Other,
+            AgentKind::Other,
         ] {
             let decide = |name: &str, args: Option<&Value>| {
                 let raw = tool_call_payload(agent, name, args, Some("call-1"));
@@ -4634,57 +4295,6 @@ mod tests {
         }
     }
 
-    /// Codex transcripts record the shell tool as `exec_command` with
-    /// `{cmd, workdir}`; hooks receive it as `Bash`. The rebuilt call must be a
-    /// shell call resolved from its `workdir`, not an unknown tool whose output
-    /// is kept.
-    #[test]
-    fn codex_transcript_exec_command_is_inspected_as_the_hook_bash_call() {
-        let policy = CapturePolicy::resolve(
-            CaptureSource::Parsed(&CaptureConfig {
-                ignore_paths: vec!["docs/adr/**".into()],
-            }),
-            "/repo",
-            None,
-        );
-        let decide = |agent: AgentKind, args: Value| {
-            let raw = tool_call_payload(agent, "exec_command", Some(&args), Some("call-1"));
-            policy.inspect(agent, &raw, "/repo").protocol().clone()
-        };
-        for args in [
-            json!({"cmd": "cat adr/x.md", "workdir": "/repo/docs"}),
-            json!({"cmd": "cat adr/x.md", "workdir": "docs"}),
-            json!({"cmd": "cat docs/adr/x.md"}),
-            json!({"cmd": ["bash", "-lc", "cat docs/adr/x.md"], "yield_time_ms": 1000}),
-        ] {
-            let protocol = decide(AgentKind::Codex, args.clone());
-            assert_eq!(protocol.tool_family(), ToolFamily::NonFile, "{args}");
-            assert_eq!(protocol.disposition(), CaptureDisposition::Drop, "{args}");
-        }
-        let public = decide(
-            AgentKind::Codex,
-            json!({"cmd": "cat adr/x.md", "workdir": "/repo/src"}),
-        );
-        assert_eq!(public.tool_family(), ToolFamily::NonFile);
-        assert_eq!(public.disposition(), CaptureDisposition::Keep);
-        let raw = tool_call_payload(
-            AgentKind::Codex,
-            "exec_command",
-            Some(&json!({"cmd": "ls", "workdir": "/other/repo"})),
-            None,
-        );
-        assert_eq!(
-            absolute_tool_location_paths(AgentKind::Codex, &raw, "/repo"),
-            Some(vec!["/other/repo".to_owned()]),
-            "the workdir locates the call like a live shell workdir"
-        );
-        // Only Codex records its shell under this name.
-        assert_eq!(
-            decide(AgentKind::ClaudeCode, json!({"cmd": "cat docs/adr/x.md"})).tool_family(),
-            ToolFamily::Unknown
-        );
-    }
-
     #[test]
     fn hermes_documented_tool_names_map_to_canonical_families() {
         for (tool, expected) in [
@@ -4699,638 +4309,6 @@ mod tests {
     }
 
     #[test]
-    fn pool_documented_tool_shape_is_closed_and_honors_exclusions() {
-        let raw = json!({
-            "hook_event_name": "PostToolUse",
-            "tool_name": "write",
-            "tool_input": {"path": "secret/token.txt", "content": "do not retain"},
-            "session_id": "pool-session",
-            "cwd": "/repo"
-        });
-        let metadata = tool_observation_metadata(AgentKind::Pool, &raw, true).unwrap();
-        assert_eq!(metadata.tool_family, ToolFamily::File);
-        assert_eq!(metadata.tool_call_id, None);
-
-        let policy = CapturePolicy::resolve(
-            CaptureSource::Parsed(&CaptureConfig {
-                ignore_paths: vec!["secret/**".into()],
-            }),
-            "/repo",
-            None,
-        );
-        let decision = policy.inspect(AgentKind::Pool, &raw, "/repo");
-        assert_eq!(decision.protocol().tool_family(), ToolFamily::File);
-        assert_eq!(decision.protocol().disposition(), CaptureDisposition::Drop);
-
-        let unknown = policy.inspect(AgentKind::Other, &raw, "/repo");
-        assert_eq!(
-            unknown.protocol().extraction_state(),
-            ExtractionState::UnsupportedSchema
-        );
-        assert_eq!(unknown.protocol().tool_family(), ToolFamily::Unknown);
-    }
-
-    /// Factory Droid's tool calls, in the 0.240.0 tool schemas (#1240): each
-    /// file tool naming an ignored path is dropped or stripped while a control
-    /// path is kept, search/list tools drop under an active marker, and
-    /// `Execute` is matched like any shell. The same payloads under
-    /// `AgentKind::Other` stay unrecognized and keep their output, which is
-    /// what the Droid mapping changes.
-    /// CodeBuddy Code sends Claude Code's tool names and fields (#1299), so an
-    /// ignored path in a `Read`, `Write`, `Edit` or `Bash` call drops. Under
-    /// `AgentKind::Other` the same calls are not recognized and keep, so the
-    /// test fails if the CodeBuddy `extract` arm is removed.
-    #[test]
-    fn codebuddy_tool_calls_honor_capture_exclusions() {
-        let policy = CapturePolicy::resolve(
-            CaptureSource::Parsed(&CaptureConfig {
-                ignore_paths: vec!["secret/**".into()],
-            }),
-            "/repo",
-            None,
-        );
-        let call = |name: &str, input: Value| {
-            json!({
-                "hook_event_name": "PreToolUse",
-                "session_id": "codebuddy-session",
-                "cwd": "/repo",
-                "tool_name": name,
-                "tool_input": input,
-                "tool_use_id": "toolu_1",
-            })
-        };
-        let disposition =
-            |agent: AgentKind, raw: &Value| policy.inspect(agent, raw, "/repo").protocol().clone();
-        for (name, input, control) in [
-            (
-                "Read",
-                json!({"file_path": "secret/a"}),
-                json!({"file_path": "src/lib.rs"}),
-            ),
-            (
-                "Write",
-                json!({"file_path": "/repo/secret/a", "content": "x"}),
-                json!({"file_path": "/repo/src/lib.rs", "content": "x"}),
-            ),
-            (
-                "Edit",
-                json!({"file_path": "secret/a", "old_string": "a", "new_string": "b"}),
-                json!({"file_path": "src/lib.rs", "old_string": "a", "new_string": "b"}),
-            ),
-            (
-                "Bash",
-                json!({"command": "cat secret/a"}),
-                json!({"command": "cat src/lib.rs"}),
-            ),
-        ] {
-            assert_eq!(
-                disposition(AgentKind::CodeBuddy, &call(name, input.clone())).disposition(),
-                CaptureDisposition::Drop,
-                "{name}"
-            );
-            assert_eq!(
-                disposition(AgentKind::Other, &call(name, input)).disposition(),
-                CaptureDisposition::Keep,
-                "{name}: without the CodeBuddy mapping the call is not recognized"
-            );
-            assert_eq!(
-                disposition(AgentKind::CodeBuddy, &call(name, control)).disposition(),
-                CaptureDisposition::Keep,
-                "{name}: control"
-            );
-        }
-    }
-
-    /// Bob's Claude-shaped file and shell calls must pass through the same
-    /// capture exclusions. The legitimate control proves the mapping does not
-    /// discard every Bob tool call.
-    #[test]
-    fn ibm_bob_tool_calls_honor_capture_exclusions() {
-        let policy = CapturePolicy::resolve(
-            CaptureSource::Parsed(&CaptureConfig {
-                ignore_paths: vec!["secret/**".into()],
-            }),
-            "/repo",
-            None,
-        );
-        let call = |path: &str| {
-            json!({
-                "hook_event_name": "PreToolUse",
-                "session_id": "bob-session",
-                "cwd": "/repo",
-                "tool_name": "Read",
-                "tool_input": {"file_path": path},
-                "tool_use_id": "toolu_1",
-            })
-        };
-
-        assert_eq!(
-            policy
-                .inspect(AgentKind::IbmBob, &call("secret/token"), "/repo")
-                .protocol()
-                .disposition(),
-            CaptureDisposition::Drop
-        );
-        assert_eq!(
-            policy
-                .inspect(AgentKind::IbmBob, &call("src/lib.rs"), "/repo")
-                .protocol()
-                .disposition(),
-            CaptureDisposition::Keep
-        );
-        assert_eq!(
-            policy
-                .inspect(AgentKind::Other, &call("secret/token"), "/repo")
-                .protocol()
-                .disposition(),
-            CaptureDisposition::Keep,
-            "without the Bob mapping the call is not recognized"
-        );
-    }
-
-    #[test]
-    fn droid_tool_calls_honor_capture_exclusions() {
-        let policy = CapturePolicy::resolve(
-            CaptureSource::Parsed(&CaptureConfig {
-                ignore_paths: vec!["docs/adr/**".into()],
-            }),
-            "/repo",
-            None,
-        );
-        let call = |name: &str, input: Value| {
-            json!({
-                "hook_event_name": "PostToolUse",
-                "session_id": "droid-session",
-                "transcript_path": "/home/u/.factory/sessions/s.jsonl",
-                "cwd": "/repo",
-                "permission_mode": "auto-low",
-                "tool_name": name,
-                "tool_input": input,
-                "tool_response": {"success": true},
-            })
-        };
-        let disposition =
-            |agent: AgentKind, raw: &Value| policy.inspect(agent, raw, "/repo").protocol().clone();
-        let file_tools = [
-            (
-                "Read",
-                json!({"file_path": "docs/adr/1.md", "offset": 0, "limit": 20}),
-            ),
-            (
-                "Create",
-                json!({"file_path": "/repo/docs/adr/2.md", "content": "secret"}),
-            ),
-            (
-                "Edit",
-                json!({"file_path": "docs/adr/1.md", "old_str": "a", "new_str": "b", "change_all": false}),
-            ),
-        ];
-        for (name, input) in file_tools {
-            let excluded = disposition(AgentKind::Droid, &call(name, input.clone()));
-            assert_eq!(excluded.tool_family(), ToolFamily::File, "{name}");
-            assert_eq!(excluded.disposition(), CaptureDisposition::Drop, "{name}");
-            assert_eq!(
-                disposition(AgentKind::Other, &call(name, input.clone())).disposition(),
-                CaptureDisposition::Keep,
-                "{name}: without the Droid mapping the call is not recognized"
-            );
-            let mut control = input;
-            control["file_path"] = json!("src/lib.rs");
-            let kept = disposition(AgentKind::Droid, &call(name, control));
-            assert_eq!(
-                kept.disposition(),
-                CaptureDisposition::Keep,
-                "{name}: control"
-            );
-        }
-
-        // `ApplyPatch` names its files only inside the patch text, like Codex
-        // `apply_patch`: under an active marker that fails closed to
-        // metadata-only, and the patch headers locate the call for the
-        // cross-checkout marker lookup.
-        let patch = |path: &str| {
-            call(
-                "ApplyPatch",
-                json!({"input": format!("*** Begin Patch\n*** Update File: {path}\n@@\n-a\n+b\n*** End Patch")}),
-            )
-        };
-        let excluded = disposition(AgentKind::Droid, &patch("docs/adr/1.md"));
-        assert_eq!(excluded.tool_family(), ToolFamily::File);
-        assert_eq!(excluded.disposition(), CaptureDisposition::MetadataOnly);
-        let codex = tool_call_payload(
-            AgentKind::Codex,
-            "apply_patch",
-            Some(
-                &json!({"input": "*** Begin Patch\n*** Update File: docs/adr/1.md\n*** End Patch"}),
-            ),
-            None,
-        );
-        assert_eq!(
-            policy
-                .inspect(AgentKind::Codex, &codex, "/repo")
-                .protocol()
-                .disposition(),
-            excluded.disposition(),
-            "ApplyPatch is decided like Codex apply_patch"
-        );
-        assert_eq!(
-            disposition(AgentKind::Other, &patch("docs/adr/1.md")).disposition(),
-            CaptureDisposition::Keep
-        );
-        assert_eq!(
-            capture_lookup_locations(AgentKind::Droid, &patch("../other/x.rs"), "/repo", None),
-            Some(vec!["/other/x.rs".to_owned()])
-        );
-        assert_eq!(
-            CapturePolicy::inactive()
-                .inspect(AgentKind::Droid, &patch("docs/adr/1.md"), "/repo")
-                .protocol()
-                .disposition(),
-            CaptureDisposition::Keep,
-            "control: no marker keeps the patch"
-        );
-
-        for (name, input) in [
-            ("LS", json!({"directory_path": "docs/adr"})),
-            ("Grep", json!({"pattern": "KEY", "path": "docs/adr"})),
-            (
-                "Glob",
-                json!({"patterns": ["docs/adr/*.md"], "folder": "/repo"}),
-            ),
-        ] {
-            let decision = disposition(AgentKind::Droid, &call(name, input.clone()));
-            assert_eq!(decision.tool_family(), ToolFamily::SearchList, "{name}");
-            assert_eq!(decision.disposition(), CaptureDisposition::Drop, "{name}");
-            assert_eq!(
-                disposition(AgentKind::Other, &call(name, input)).disposition(),
-                CaptureDisposition::Keep,
-                "{name}: without the Droid mapping the call is not recognized"
-            );
-        }
-        // Droid's directory and glob arguments locate the call in another
-        // checkout.
-        let elsewhere = |name: &str, input: Value| {
-            capture_lookup_locations(AgentKind::Droid, &call(name, input), "/repo", None)
-        };
-        assert_eq!(
-            elsewhere("LS", json!({"directory_path": "/other/docs"})),
-            Some(vec!["/other/docs".to_owned()])
-        );
-        assert_eq!(
-            elsewhere("Glob", json!({"patterns": "src/*.rs", "folder": "/other"})),
-            Some(vec!["/other".to_owned(), "/other/src/*.rs".to_owned()])
-        );
-        assert_eq!(
-            elsewhere(
-                "Grep",
-                json!({"pattern": "KEY", "path": "/other", "glob_pattern": "a/*.env"})
-            ),
-            Some(vec!["/other".to_owned(), "/other/a/*.env".to_owned()])
-        );
-        assert_eq!(
-            absolute_tool_location_paths(
-                AgentKind::Droid,
-                &call("LS", json!({"directory_path": "/other/docs"})),
-                "/repo"
-            ),
-            Some(vec!["/other/docs".to_owned()])
-        );
-
-        let shell =
-            |command: &str| call("Execute", json!({"command": command, "riskLevel": "low"}));
-        let excluded = disposition(AgentKind::Droid, &shell("cat docs/adr/1.md"));
-        assert_eq!(excluded.tool_family(), ToolFamily::NonFile);
-        assert_eq!(excluded.disposition(), CaptureDisposition::Drop);
-        assert_eq!(
-            disposition(AgentKind::Droid, &shell("cat src/lib.rs")).disposition(),
-            CaptureDisposition::Keep
-        );
-        assert_eq!(
-            disposition(AgentKind::Other, &shell("cat docs/adr/1.md")).disposition(),
-            CaptureDisposition::Keep
-        );
-    }
-
-    /// Droid hook payloads carry no tool-call id, so the drop list and the
-    /// observation metadata read the tool name alone (#1240).
-    #[test]
-    fn droid_tool_payload_fields_have_no_call_id() {
-        let raw = json!({
-            "tool_name": "Execute",
-            "tool_input": {"command": "ls"},
-            "tool_use_id": "would-be-ignored"
-        });
-        assert_eq!(
-            tool_payload_fields(AgentKind::Droid, &raw),
-            Some(("Execute", None))
-        );
-        let metadata = tool_observation_metadata(AgentKind::Droid, &raw, true).unwrap();
-        assert_eq!(metadata.tool_family, ToolFamily::NonFile);
-        assert_eq!(metadata.tool_call_id, None);
-        let no_input = json!({"tool_name": "Read"});
-        assert!(tool_observation_metadata(AgentKind::Droid, &no_input, true).is_none());
-        assert!(tool_observation_metadata(AgentKind::Droid, &no_input, false).is_some());
-        for (tool, expected) in [
-            ("Read", ToolFamily::File),
-            ("Create", ToolFamily::File),
-            ("Edit", ToolFamily::File),
-            ("ApplyPatch", ToolFamily::File),
-            ("LS", ToolFamily::SearchList),
-            ("Grep", ToolFamily::SearchList),
-            ("Glob", ToolFamily::SearchList),
-            ("Execute", ToolFamily::NonFile),
-        ] {
-            assert_eq!(agent_family(AgentKind::Droid, tool), expected, "{tool}");
-        }
-        // The Droid-only names keep their classification for other agents.
-        assert_eq!(
-            agent_family(AgentKind::ClaudeCode, "ApplyPatch"),
-            ToolFamily::Unknown
-        );
-        assert_eq!(
-            agent_family(AgentKind::ClaudeCode, "Create"),
-            ToolFamily::Unknown
-        );
-    }
-
-    /// Meta Muse Code's tool calls, in the shapes captured offline from Muse
-    /// Code 1.4.7 hooks: `tool_input.path` is relative as the model wrote it
-    /// and resolves lexically against `cwd`. Each file tool naming an ignored
-    /// path, relative or absolute, is dropped while a control path is kept;
-    /// `search` drops under an active marker; `bash` and `monitor` are matched
-    /// like any shell from their `workdir`; `bash_input` reads back an earlier
-    /// command's output. The same payloads under `AgentKind::Other` stay
-    /// unrecognized and keep their output, which is what the Muse mapping
-    /// changes.
-    #[test]
-    fn muse_tool_calls_honor_capture_exclusions() {
-        let policy = CapturePolicy::resolve(
-            CaptureSource::Parsed(&CaptureConfig {
-                ignore_paths: vec!["docs/adr/**".into(), ".agents/memory/secret/**".into()],
-            }),
-            "/repo",
-            None,
-        );
-        let call = |name: &str, input: Value| {
-            json!({
-                "hook_event_name": "PostToolUse",
-                "session_id": "01a13669-dc61-7a72-b5ec-ad2f300ffd26",
-                "transcript_path": null,
-                "cwd": "/repo",
-                "model": "muse-wonder-1.0",
-                "model_provider": "meta",
-                "permission_mode": "bypassPermissions",
-                "turn_id": "ccfe4a87-c654-49f5-b5e9-473015c7a90b",
-                "tool_name": name,
-                "tool_input": input,
-                "tool_use_id": "call_30a33793ad9c",
-                "tool_response": {"filePath": "/repo/x", "structuredPatch": []},
-            })
-        };
-        let disposition =
-            |agent: AgentKind, raw: &Value| policy.inspect(agent, raw, "/repo").protocol().clone();
-        let file_tools = [
-            ("read_file", json!({"path": "docs/adr/1.md"})),
-            (
-                "read_file",
-                json!({"path": "/repo/docs/adr/1.md", "offset": 1}),
-            ),
-            (
-                "write_file",
-                json!({"path": "docs/adr/2.md", "content": "secret"}),
-            ),
-            (
-                "write_file",
-                json!({"path": "/repo/docs/adr/2.md", "content": "secret"}),
-            ),
-            (
-                "edit_file",
-                json!({"path": "docs/adr/1.md", "find": "a", "replace": "b"}),
-            ),
-            (
-                "edit_file",
-                json!({"path": "/repo/docs/adr/1.md", "find": "a", "replace": "b"}),
-            ),
-            (
-                "add_memory",
-                json!({"path": "secret/n.md", "scope": "project", "content": "x"}),
-            ),
-            (
-                "edit_memory",
-                json!({"path": "secret/n.md", "scope": "project", "old_str": "a", "new_str": "b"}),
-            ),
-            (
-                "read_memory",
-                json!({"path": "secret/n.md", "scope": "project"}),
-            ),
-        ];
-        for (name, input) in file_tools {
-            let excluded = disposition(AgentKind::Muse, &call(name, input.clone()));
-            assert_eq!(excluded.tool_family(), ToolFamily::File, "{name} {input}");
-            assert_eq!(
-                excluded.disposition(),
-                CaptureDisposition::Drop,
-                "{name} {input}"
-            );
-            assert_eq!(
-                disposition(AgentKind::Other, &call(name, input.clone())).disposition(),
-                CaptureDisposition::Keep,
-                "{name}: without the Muse mapping the call is not recognized"
-            );
-            let mut control = input;
-            control["path"] = json!("src/lib.rs");
-            let kept = disposition(AgentKind::Muse, &call(name, control));
-            assert_eq!(
-                kept.disposition(),
-                CaptureDisposition::Keep,
-                "{name}: control"
-            );
-        }
-        // A memory path is relative to its scope's directory, not to `cwd`:
-        // `docs/adr/1.md` in the project scope is `.agents/memory/docs/adr/1.md`.
-        assert_eq!(
-            disposition(
-                AgentKind::Muse,
-                &call(
-                    "read_memory",
-                    json!({"path": "docs/adr/1.md", "scope": "project"})
-                )
-            )
-            .disposition(),
-            CaptureDisposition::Keep
-        );
-        // The personal scopes live outside the repository, where no candidate
-        // reaches, so they fail closed under an active marker.
-        for scope in [json!("personal"), json!("personal_project"), Value::Null] {
-            let decision = disposition(
-                AgentKind::Muse,
-                &call("add_memory", json!({"path": "n.md", "scope": scope})),
-            );
-            assert_eq!(decision.tool_family(), ToolFamily::File, "{scope}");
-            assert_eq!(
-                decision.disposition(),
-                CaptureDisposition::MetadataOnly,
-                "{scope}"
-            );
-            assert_eq!(
-                CapturePolicy::inactive()
-                    .inspect(
-                        AgentKind::Muse,
-                        &call("add_memory", json!({"path": "n.md", "scope": scope})),
-                        "/repo"
-                    )
-                    .protocol()
-                    .disposition(),
-                CaptureDisposition::Keep,
-                "control: no marker keeps the memory call"
-            );
-        }
-
-        // `apply_patch` (the `openai-apply-patch` preset) carries a Codex
-        // envelope in `patch`.
-        let patch = |path: &str| {
-            call(
-                "apply_patch",
-                json!({"patch": format!("*** Begin Patch\n*** Update File: {path}\n@@\n-a\n+b\n*** End Patch")}),
-            )
-        };
-        let excluded = disposition(AgentKind::Muse, &patch("docs/adr/1.md"));
-        assert_eq!(excluded.tool_family(), ToolFamily::File);
-        assert_eq!(excluded.disposition(), CaptureDisposition::MetadataOnly);
-        assert_eq!(
-            capture_lookup_locations(AgentKind::Muse, &patch("../other/x.rs"), "/repo", None),
-            Some(vec!["/other/x.rs".to_owned()])
-        );
-
-        // `search` names globs in `paths` and filters with `glob`.
-        let search = call("search", json!({"pattern": "beta", "paths": ["*.txt"]}));
-        let decision = disposition(AgentKind::Muse, &search);
-        assert_eq!(decision.tool_family(), ToolFamily::SearchList);
-        assert_eq!(decision.disposition(), CaptureDisposition::Drop);
-        assert_eq!(
-            capture_lookup_locations(
-                AgentKind::Muse,
-                &call(
-                    "search",
-                    json!({"pattern": "KEY", "paths": ["/other"], "glob": "a/*.env"})
-                ),
-                "/repo",
-                None
-            ),
-            Some(vec!["/other".to_owned(), "/other/a/*.env".to_owned()])
-        );
-
-        let shell = |name: &str, command: &str, workdir: &str| {
-            call(
-                name,
-                json!({"command": command, "description": "x", "workdir": workdir}),
-            )
-        };
-        for name in ["bash", "monitor"] {
-            let excluded = disposition(AgentKind::Muse, &shell(name, "cat adr/1.md", "/repo/docs"));
-            assert_eq!(excluded.tool_family(), ToolFamily::NonFile, "{name}");
-            assert_eq!(excluded.disposition(), CaptureDisposition::Drop, "{name}");
-            assert_eq!(
-                disposition(AgentKind::Muse, &shell(name, "cat notes.txt", "/repo")).disposition(),
-                CaptureDisposition::Keep,
-                "{name}: control"
-            );
-        }
-        assert_eq!(
-            disposition(
-                AgentKind::Other,
-                &shell("monitor", "cat adr/1.md", "/repo/docs")
-            )
-            .disposition(),
-            CaptureDisposition::Keep,
-            "monitor: without the Muse mapping the call is not recognized"
-        );
-        let input = call("bash_input", json!({"session_id": "exec-1", "chars": "q"}));
-        assert_eq!(
-            disposition(AgentKind::Muse, &input).disposition(),
-            CaptureDisposition::MetadataOnly,
-            "bash_input reads back an earlier command's output"
-        );
-        assert_eq!(
-            CapturePolicy::inactive()
-                .inspect(AgentKind::Muse, &input, "/repo")
-                .protocol()
-                .disposition(),
-            CaptureDisposition::Keep
-        );
-        assert_eq!(
-            disposition(AgentKind::Other, &input).disposition(),
-            CaptureDisposition::Keep
-        );
-    }
-
-    /// Muse hook payloads carry the provider call id in `tool_use_id`, so the
-    /// drop list and the observation metadata read both fields, and a
-    /// `PostToolUseFailure` `error` proves an error outcome.
-    #[test]
-    fn muse_tool_payload_fields_carry_the_call_id() {
-        let raw = json!({
-            "tool_name": "write_file",
-            "tool_input": {"path": "notes.txt", "content": "alpha\n"},
-            "tool_use_id": "call_30a33793ad9c"
-        });
-        assert_eq!(
-            tool_payload_fields(AgentKind::Muse, &raw),
-            Some(("write_file", Some("call_30a33793ad9c")))
-        );
-        assert_eq!(tool_payload_fields(AgentKind::Other, &raw), None);
-        let metadata = tool_observation_metadata(AgentKind::Muse, &raw, true).unwrap();
-        assert_eq!(metadata.tool_family, ToolFamily::File);
-        assert_eq!(metadata.tool_call_id.as_deref(), Some("call_30a33793ad9c"));
-        let no_input = json!({"tool_name": "read_file"});
-        assert!(tool_observation_metadata(AgentKind::Muse, &no_input, true).is_none());
-        assert!(tool_observation_metadata(AgentKind::Muse, &no_input, false).is_some());
-        let failure = json!({
-            "hook_event_name": "PostToolUseFailure",
-            "tool_name": "read_file",
-            "tool_input": {"path": "missing.txt"},
-            "tool_use_id": "call_a2a05a20bbb2",
-            "error": "tool failed: No such file or directory (os error 2)",
-            "is_interrupt": false,
-            "duration_ms": 0
-        });
-        assert_eq!(
-            tool_observation_outcome(AgentKind::Muse, &failure),
-            ToolOutcome::Error
-        );
-        assert_eq!(
-            tool_observation_outcome(AgentKind::Muse, &raw),
-            ToolOutcome::Unknown
-        );
-        for (tool, expected) in [
-            ("read_file", ToolFamily::File),
-            ("write_file", ToolFamily::File),
-            ("edit_file", ToolFamily::File),
-            ("apply_patch", ToolFamily::File),
-            ("read_memory", ToolFamily::File),
-            ("add_memory", ToolFamily::File),
-            ("edit_memory", ToolFamily::File),
-            ("search", ToolFamily::SearchList),
-            ("bash", ToolFamily::NonFile),
-            ("shell", ToolFamily::NonFile),
-            ("monitor", ToolFamily::NonFile),
-            ("bash_input", ToolFamily::Unknown),
-            ("web_fetch", ToolFamily::NonFile),
-            ("web_search", ToolFamily::NonFile),
-        ] {
-            assert_eq!(agent_family(AgentKind::Muse, tool), expected, "{tool}");
-        }
-        // The Muse-only names keep their classification for other agents.
-        for tool in ["add_memory", "monitor"] {
-            assert_eq!(
-                agent_family(AgentKind::ClaudeCode, tool),
-                ToolFamily::Unknown,
-                "{tool}"
-            );
-        }
-    }
-
-    #[test]
     fn pool_documented_tool_names_map_to_canonical_families() {
         for (tool, expected) in [
             ("read", ToolFamily::File),
@@ -5341,231 +4319,6 @@ mod tests {
         ] {
             assert_eq!(family(tool), expected, "tool: {tool}");
         }
-    }
-
-    #[test]
-    fn zcode_documented_tool_shape_is_closed_and_honors_exclusions() {
-        // Live-captured ZCode payload (engine v0.16.5, #512): the snake_case
-        // aliases carry exactly the fields Claude Code sends, including a
-        // real provider-format tool call id (`call_…`).
-        let raw = json!({
-            "hookEventName": "PostToolUse",
-            "toolName": "Write",
-            "tool_name": "Write",
-            "tool_use_id": "call_6d8f8fd5d9eb4888b0f9d5c6",
-            "toolInput": {"file_path": "/repo/secret/token.txt", "content": "do not retain"},
-            "tool_input": {"file_path": "/repo/secret/token.txt", "content": "do not retain"},
-            "session_id": "sess_0a5ba797",
-            "cwd": "/repo"
-        });
-        let metadata = tool_observation_metadata(AgentKind::Zcode, &raw, true).unwrap();
-        assert_eq!(metadata.tool_family, ToolFamily::File);
-        assert_eq!(
-            metadata.tool_call_id.as_deref(),
-            Some("call_6d8f8fd5d9eb4888b0f9d5c6")
-        );
-
-        let policy = CapturePolicy::resolve(
-            CaptureSource::Parsed(&CaptureConfig {
-                ignore_paths: vec!["secret/**".into()],
-            }),
-            "/repo",
-            None,
-        );
-        let decision = policy.inspect(AgentKind::Zcode, &raw, "/repo");
-        assert_eq!(decision.protocol().tool_family(), ToolFamily::File);
-        assert_eq!(decision.protocol().disposition(), CaptureDisposition::Drop);
-
-        let unknown = policy.inspect(AgentKind::Other, &raw, "/repo");
-        assert_eq!(
-            unknown.protocol().extraction_state(),
-            ExtractionState::UnsupportedSchema
-        );
-        assert_eq!(unknown.protocol().tool_family(), ToolFamily::Unknown);
-    }
-
-    #[test]
-    fn grizzybot_tool_shape_is_closed_and_unknown_agents_stay_unsupported() {
-        let raw = json!({
-            "hook_event_name": "PostToolUse",
-            "tool_name": "web_search",
-            "tool_input": {"query": "swift"},
-            "session_id": "gb-session",
-            "cwd": "/bot/home"
-        });
-        let metadata = tool_observation_metadata(AgentKind::Grizzybot, &raw, true).unwrap();
-        assert_eq!(metadata.tool_family, ToolFamily::NonFile);
-        // A PreToolUse without an input is not a proven shape.
-        let no_input = json!({"tool_name": "read_file"});
-        assert!(tool_observation_metadata(AgentKind::Grizzybot, &no_input, true).is_none());
-        assert!(tool_observation_metadata(AgentKind::Grizzybot, &no_input, false).is_some());
-    }
-
-    #[test]
-    fn zcode_post_tool_use_failure_error_maps_to_error_outcome() {
-        // Live-captured PostToolUseFailure payload (run 10, real model, #512):
-        // `error` is a plain string, `error_details` carries the internal
-        // error class.
-        let raw = json!({
-            "hook_event_name": "PostToolUseFailure",
-            "tool_name": "Write",
-            "error": "File not found: /proc/capture-test.txt",
-            "error_details": {
-                "message": "File not found: /proc/capture-test.txt",
-                "type": "FileSystemPortError"
-            }
-        });
-        assert_eq!(
-            tool_observation_outcome(AgentKind::Zcode, &raw),
-            ToolOutcome::Error
-        );
-        // exitCode is deliberately not trusted for Success: the same
-        // tool_response object carries timedOut / interrupted flags.
-        let ok = json!({"tool_response": {"exitCode": 0}});
-        assert_eq!(
-            tool_observation_outcome(AgentKind::Zcode, &ok),
-            ToolOutcome::Unknown
-        );
-    }
-
-    #[test]
-    fn copilot_cli_outcome_reads_only_proven_result_types() {
-        let outcome = |raw: Value| tool_observation_outcome(AgentKind::CopilotCli, &raw);
-        let with_type = |result_type: &str| {
-            json!({"tool_name": "bash", "tool_result": {
-                "result_type": result_type, "text_result_for_llm": "x"
-            }})
-        };
-        assert_eq!(outcome(with_type("success")), ToolOutcome::Success);
-        assert_eq!(outcome(with_type("failure")), ToolOutcome::Error);
-        assert_eq!(outcome(with_type("error")), ToolOutcome::Error);
-        // A denied or rejected call is not a tool failure, and a future type
-        // proves nothing.
-        assert_eq!(outcome(with_type("denied")), ToolOutcome::Unknown);
-        // PostToolUseFailure (aliased to PostToolUse) carries `error` and no
-        // `tool_result`.
-        assert_eq!(
-            outcome(json!({"tool_name": "bash", "error": "permission denied"})),
-            ToolOutcome::Error
-        );
-        assert_eq!(outcome(json!({"tool_name": "bash"})), ToolOutcome::Unknown);
-    }
-
-    #[test]
-    fn copilot_cli_tool_metadata_uses_the_claude_compatible_keys() {
-        let pre = json!({
-            "tool_name": "edit",
-            "tool_input": {"path": "src/lib.rs"},
-        });
-        assert!(tool_observation_metadata(AgentKind::CopilotCli, &pre, true).is_some());
-        // PreToolUse without a proven input shape stays metadata-less.
-        let no_input = json!({"tool_name": "edit"});
-        assert!(tool_observation_metadata(AgentKind::CopilotCli, &no_input, true).is_none());
-    }
-
-    #[test]
-    fn command_code_official_tool_shape_is_closed_and_honors_exclusions() {
-        let policy = CapturePolicy::resolve(
-            CaptureSource::Parsed(&CaptureConfig {
-                ignore_paths: vec!["secret/**".into()],
-            }),
-            "/repo",
-            None,
-        );
-        let ignored = json!({
-            "session_id": "command-session",
-            "cwd": "/repo",
-            "tool_use_id": "tool-42",
-            "tool_name": "edit_file",
-            "tool_input": {
-                "file_path": "secret/token.txt",
-                "old_value": "old",
-                "new_value": "new"
-            }
-        });
-
-        let metadata = tool_observation_metadata(AgentKind::CommandCode, &ignored, true).unwrap();
-        assert_eq!(metadata.tool_family, ToolFamily::File);
-        assert_eq!(metadata.tool_call_id.as_deref(), Some("tool-42"));
-        let decision = policy.inspect(AgentKind::CommandCode, &ignored, "/repo");
-        assert_eq!(decision.protocol().disposition(), CaptureDisposition::Drop);
-
-        for (tool, expected) in [
-            ("read_file", ToolFamily::File),
-            ("write_file", ToolFamily::File),
-            ("edit_file", ToolFamily::File),
-            ("shell_command", ToolFamily::NonFile),
-        ] {
-            assert_eq!(family(tool), expected, "tool: {tool}");
-        }
-    }
-
-    #[test]
-    fn kiro_v3_documented_and_live_tool_shapes_honor_exclusions_and_fail_closed() {
-        let policy = CapturePolicy::resolve(
-            CaptureSource::Parsed(&CaptureConfig {
-                ignore_paths: vec!["secret/**".into()],
-            }),
-            "/repo",
-            None,
-        );
-        let official_read = json!({
-            "session_id": "kiro-session",
-            "cwd": "/repo",
-            "tool_name": "read",
-            "tool_input": {
-                "operations": [
-                    {"mode": "Line", "path": "src/lib.rs"},
-                    {"mode": "Line", "path": "secret/token.txt"}
-                ]
-            }
-        });
-        let decision = policy.inspect(AgentKind::KiroCli, &official_read, "/repo");
-        assert_eq!(decision.protocol().tool_family(), ToolFamily::File);
-        assert_eq!(decision.protocol().path_count(), 2);
-        assert_eq!(decision.protocol().disposition(), CaptureDisposition::Drop);
-
-        let live_read = json!({
-            "hook_event_name": "PreToolUse",
-            "session_id": "kiro-session",
-            "cwd": "/repo",
-            "tool_name": "read_file",
-            "tool_input": {
-                "path": "secret/token.txt",
-                "offset": null,
-                "limit": null
-            }
-        });
-        let decision = policy.inspect(AgentKind::KiroCli, &live_read, "/repo");
-        assert_eq!(decision.protocol().tool_family(), ToolFamily::File);
-        assert_eq!(decision.protocol().path_count(), 1);
-        assert_eq!(decision.protocol().disposition(), CaptureDisposition::Drop);
-
-        let mut official_post = official_read.clone();
-        official_post.as_object_mut().unwrap().insert(
-            "tool_response".to_string(),
-            json!({"success": true, "result": ["sanitized"]}),
-        );
-        assert_eq!(
-            tool_observation_outcome(AgentKind::KiroCli, &official_post),
-            ToolOutcome::Success
-        );
-
-        let unknown_shape = json!({
-            "session_id": "kiro-session",
-            "cwd": "/repo",
-            "tool_name": "read",
-            "tool_input": {"files": ["secret/token.txt"]}
-        });
-        let decision = policy.inspect(AgentKind::KiroCli, &unknown_shape, "/repo");
-        assert_eq!(
-            decision.protocol().extraction_state(),
-            ExtractionState::MissingOrMalformed
-        );
-        assert_eq!(
-            decision.protocol().disposition(),
-            CaptureDisposition::MetadataOnly
-        );
     }
 
     #[test]
@@ -5588,42 +4341,6 @@ mod tests {
             direct_paths(target.as_object().unwrap()).unwrap(),
             vec!["/repo/src/main.rs".to_string()]
         );
-    }
-    #[test]
-    fn antigravity_file_tools_honor_capture_exclusions() {
-        let policy = CapturePolicy::resolve(
-            CaptureSource::Parsed(&CaptureConfig {
-                ignore_paths: vec!["secret/**".into()],
-            }),
-            "/repo",
-            None,
-        );
-        for tool in [
-            "view_file",
-            "write_to_file",
-            "replace_file_content",
-            "multi_replace_file_content",
-        ] {
-            let ignored = json!({
-                "toolCall": {
-                    "name": tool,
-                    "args": {"TargetFile": "secret/keys.txt"}
-                }
-            });
-            let decision = policy.inspect(AgentKind::AntigravityCli, &ignored, "/repo");
-            assert_eq!(decision.protocol().tool_family(), ToolFamily::File);
-            assert_eq!(
-                decision.protocol().disposition(),
-                CaptureDisposition::Drop,
-                "tool: {tool}"
-            );
-        }
-
-        let kept =
-            json!({"toolCall": {"name": "view_file", "args": {"TargetFile": "src/main.rs"}}});
-        let decision = policy.inspect(AgentKind::AntigravityCli, &kept, "/repo");
-        assert_eq!(decision.protocol().tool_family(), ToolFamily::File);
-        assert_eq!(decision.protocol().disposition(), CaptureDisposition::Keep);
     }
     #[test]
     fn normalization_and_matcher_bounds() {
@@ -5653,7 +4370,7 @@ mod tests {
         let raw = json!({"tool_name":"Edit","tool_input":{"path":"x".repeat(MAX_CANDIDATE_PATH_CHARS + 1)}});
         assert_eq!(
             policy
-                .inspect(AgentKind::Codex, &raw, "/repo")
+                .inspect(AgentKind::Other, &raw, "/repo")
                 .protocol()
                 .disposition(),
             CaptureDisposition::MetadataOnly
@@ -5661,7 +4378,7 @@ mod tests {
         let overflow = json!({"tool_name":"Edit","tool_input":{"paths":vec!["public"; MAX_CAPTURE_CANDIDATES + 1]}});
         assert_eq!(
             policy
-                .inspect(AgentKind::Codex, &overflow, "/repo")
+                .inspect(AgentKind::Other, &overflow, "/repo")
                 .protocol()
                 .disposition(),
             CaptureDisposition::MetadataOnly
@@ -5677,13 +4394,13 @@ mod tests {
             json!({"tool_name":"Edit","tool_input":{"path":"x".repeat(MAX_CANDIDATE_PATH_CHARS)}});
         assert_eq!(
             costly
-                .inspect(AgentKind::Codex, &costly_raw, "/repo")
+                .inspect(AgentKind::Other, &costly_raw, "/repo")
                 .protocol()
                 .disposition(),
             CaptureDisposition::MetadataOnly
         );
         let chars = "?".repeat(MAX_IGNORE_PATTERN_CHARS);
-        assert_eq!(CapturePolicy::resolve(CaptureSource::Parsed(&CaptureConfig { ignore_paths: vec![chars] }), "/repo", None).inspect(AgentKind::Codex, &json!({"tool_name":"Edit","tool_input":{"path":"x".repeat(MAX_IGNORE_PATTERN_CHARS)}}), "/repo").protocol().policy_state(), PolicyState::Active);
+        assert_eq!(CapturePolicy::resolve(CaptureSource::Parsed(&CaptureConfig { ignore_paths: vec![chars] }), "/repo", None).inspect(AgentKind::Other, &json!({"tool_name":"Edit","tool_input":{"path":"x".repeat(MAX_IGNORE_PATTERN_CHARS)}}), "/repo").protocol().policy_state(), PolicyState::Active);
         assert_eq!(
             CapturePolicy::resolve(
                 CaptureSource::Parsed(&CaptureConfig {
@@ -5693,7 +4410,7 @@ mod tests {
                 None
             )
             .inspect(
-                AgentKind::Codex,
+                AgentKind::Other,
                 &json!({"tool_name":"Edit","tool_input":{"path":"x"}}),
                 "/repo"
             )
@@ -5722,73 +4439,15 @@ mod tests {
     fn recursive_shell_globs_cannot_reach_ignored_paths() {
         let policy = shell_policy();
         for command in ["cat **/*.md", "cat **/0001.md", "cat docs/**/0001.md"] {
-            let decision = policy.inspect(AgentKind::ClaudeCode, &bash(command), "/repo");
+            let decision = policy.inspect(AgentKind::Other, &bash(command), "/repo");
             assert_eq!(
                 decision.protocol().disposition(),
                 CaptureDisposition::Drop,
                 "{command}"
             );
         }
-        let decision = policy.inspect(AgentKind::ClaudeCode, &bash("cat src/**/main.rs"), "/repo");
+        let decision = policy.inspect(AgentKind::Other, &bash("cat src/**/main.rs"), "/repo");
         assert_eq!(decision.protocol().disposition(), CaptureDisposition::Keep);
-    }
-
-    /// The drop/keep tables live in the shared fixture so the generated
-    /// TypeScript matcher runs the very same vectors (#961).
-    /// The shared Windows-spelling vectors. Adversarial: every Git Bash,
-    /// MSYS2, Cygwin, rooted, device, administrative-share, trailing
-    /// dot/space and alternate-data-stream spelling of an ignored file in a
-    /// Windows session drops, file tool or shell. Controls: the same names on
-    /// another drive or share, a longer name, and a POSIX session (where a
-    /// trailing dot, a colon or `/c/...` is part of the name) keep.
-    #[test]
-    fn windows_spelling_fixture_vectors() {
-        let fixture: Value =
-            serde_json::from_str(include_str!("../tests/fixtures/capture-policy.json")).unwrap();
-        let sections = ["windows", "windows_posix_controls"]
-            .iter()
-            .map(|name| (*name, &fixture[*name]))
-            .chain(
-                fixture["windows_scopes"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .map(|section| ("windows_scopes", section)),
-            );
-        for (name, section) in sections {
-            let cwd = section["cwd"].as_str().unwrap();
-            let config = CaptureConfig {
-                ignore_paths: section["ignore_paths"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .map(|pattern| pattern.as_str().unwrap().to_owned())
-                    .collect(),
-            };
-            let policy =
-                CapturePolicy::resolve_for_host(CaptureSource::Parsed(&config), cwd, None, false);
-            let shell = section["shell"].as_array().cloned().unwrap_or_default();
-            let files = section["files"].as_array().unwrap().iter().map(|vector| {
-                (
-                    json!({"tool": "edit", "args": {"path": vector["path"]}}),
-                    vector,
-                )
-            });
-            let commands = shell.iter().map(|vector| {
-                let payload = vector.get("payload").cloned().unwrap_or_else(
-                    || json!({"tool": "bash", "args": {"command": vector["command"]}}),
-                );
-                (payload, vector)
-            });
-            for (payload, vector) in files.chain(commands) {
-                let decision = policy.inspect(AgentKind::OpenCode, &payload, cwd);
-                assert_eq!(
-                    serde_json::to_value(decision.protocol().disposition()).unwrap(),
-                    vector["disposition"],
-                    "{name} ({cwd}): {vector}"
-                );
-            }
-        }
     }
 
     /// A Windows marker's POSIX absolute pattern would match no Windows
@@ -5904,7 +4563,7 @@ mod tests {
         let read = |paths: &[String]| {
             policy
                 .inspect(
-                    AgentKind::ClaudeCode,
+                    AgentKind::Other,
                     &json!({"tool_name": "Read", "tool_input": {"paths": paths}}),
                     "/repo",
                 )
@@ -5938,7 +4597,7 @@ mod tests {
         let bash = |command: &str| json!({"tool_name": "Bash", "tool_input": {"command": command}});
         let decide = |policy: &CapturePolicy, raw: &Value| {
             policy
-                .inspect(AgentKind::ClaudeCode, raw, "/repo")
+                .inspect(AgentKind::Other, raw, "/repo")
                 .protocol()
                 .disposition()
         };
@@ -5951,7 +4610,7 @@ mod tests {
             json!({"tool_name": "shell", "tool_input": {"command": ["bash", "-lc", at_limit]}});
         assert_eq!(
             policy
-                .inspect(AgentKind::Codex, &argv, "/repo")
+                .inspect(AgentKind::Other, &argv, "/repo")
                 .protocol()
                 .disposition(),
             CaptureDisposition::MetadataOnly
@@ -5960,12 +4619,9 @@ mod tests {
             decide(&CapturePolicy::inactive(), &bash(&over)),
             CaptureDisposition::Keep
         );
+        assert!(capture_lookup_locations(AgentKind::Other, &bash(&over), "/repo", None).is_none());
         assert!(
-            capture_lookup_locations(AgentKind::ClaudeCode, &bash(&over), "/repo", None).is_none()
-        );
-        assert!(
-            capture_lookup_locations(AgentKind::ClaudeCode, &bash(&at_limit), "/repo", None)
-                .is_some()
+            capture_lookup_locations(AgentKind::Other, &bash(&at_limit), "/repo", None).is_some()
         );
     }
 
@@ -5988,424 +4644,18 @@ mod tests {
             (&invalid, CaptureDisposition::MetadataOnly),
             (&CapturePolicy::inactive(), CaptureDisposition::Keep),
         ] {
-            let decision = policy.inspect(AgentKind::Hermes, &raw, "/repo");
+            let decision = policy.inspect(AgentKind::Other, &raw, "/repo");
             assert_eq!(decision.protocol().disposition(), expected);
             assert_eq!(decision.protocol().tool_family(), ToolFamily::NonFile);
         }
         let browse = json!({"tool_name": "browser_navigate", "tool_input": {"url": "https://example.com/secret/a"}});
         assert_eq!(
             active
-                .inspect(AgentKind::Hermes, &browse, "/repo")
+                .inspect(AgentKind::Other, &browse, "/repo")
                 .protocol()
                 .disposition(),
             CaptureDisposition::Keep
         );
-    }
-
-    #[test]
-    fn shell_fixture_vectors() {
-        let fixture: Value =
-            serde_json::from_str(include_str!("../tests/fixtures/capture-policy.json")).unwrap();
-        let shell = &fixture["shell"];
-        let ignore_paths = shell["ignore_paths"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|pattern| pattern.as_str().unwrap().to_owned())
-            .collect();
-        let config = CaptureConfig { ignore_paths };
-        // The host's case folding is pinned per vector, so the table means
-        // the same on every CI OS.
-        let policy = |fold_case| {
-            CapturePolicy::resolve_for_host(
-                CaptureSource::Parsed(&config),
-                "/repo",
-                Some("/home/me"),
-                fold_case,
-            )
-        };
-        for vector in shell["vectors"].as_array().unwrap() {
-            let policy = policy(vector["fold_case"].as_bool().unwrap_or(false));
-            let payload = vector
-                .get("payload")
-                .cloned()
-                .unwrap_or_else(|| json!({"tool": "bash", "args": {"command": vector["command"]}}));
-            let payload: Value =
-                serde_json::from_str(&payload.to_string().replace("{root}", "/repo")).unwrap();
-            let cwd = vector["cwd"]
-                .as_str()
-                .map_or_else(|| "/repo".to_owned(), |sub| format!("/repo/{sub}"));
-            let decision = policy.inspect(AgentKind::OpenCode, &payload, &cwd);
-            let protocol = decision.protocol();
-            assert_eq!(
-                serde_json::to_value(protocol.disposition()).unwrap(),
-                vector["disposition"],
-                "vector: {vector}"
-            );
-            assert_eq!(
-                protocol.tool_family(),
-                ToolFamily::NonFile,
-                "vector: {vector}"
-            );
-            // Unchanged protocol fields keep old and new servers agreeing.
-            assert_eq!(protocol.path_count(), 0);
-            assert_eq!(protocol.extraction_state(), ExtractionState::Extracted);
-        }
-    }
-
-    #[test]
-    fn shell_tool_shapes_of_every_adapter_honor_exclusions() {
-        let policy = shell_policy();
-        for (agent, raw) in [
-            (AgentKind::ClaudeCode, bash("cat docs/adr/x.md")),
-            (
-                AgentKind::Codex,
-                json!({"tool_name": "shell", "tool_input": {"command": ["bash", "-lc", "cat docs/adr/x.md"]}}),
-            ),
-            (
-                AgentKind::Codex,
-                json!({"tool_name": "exec_command", "tool_input": {"cmd": "cat docs/adr/x.md"}}),
-            ),
-            (
-                AgentKind::KiroCli,
-                json!({"tool_name": "execute_bash", "tool_input": {"command": "cat docs/adr/x.md"}}),
-            ),
-            (
-                AgentKind::Hermes,
-                json!({"tool_name": "terminal", "tool_input": {"command": "cat docs/adr/x.md"}}),
-            ),
-            (
-                AgentKind::OpenCode,
-                json!({"tool": "bash", "args": {"command": "cat docs/adr/x.md"}}),
-            ),
-            (
-                AgentKind::OpenClaw,
-                json!({"tool": "exec", "args": {"command": "cat 0001.md", "workdir": "docs/adr"}}),
-            ),
-            (
-                AgentKind::Devin,
-                json!({"tool_name": "exec", "tool_input": {"command": "cat docs/adr/x.md"}}),
-            ),
-        ] {
-            let decision = policy.inspect(agent, &raw, "/repo");
-            if decision.protocol().tool_family() == ToolFamily::NonFile {
-                assert_eq!(
-                    decision.protocol().disposition(),
-                    CaptureDisposition::Drop,
-                    "raw: {raw}"
-                );
-            } else {
-                // `exec_command` is not a recognized shell tool name; it keeps
-                // today's unknown-tool behavior rather than guessing.
-                assert_eq!(raw["tool_name"], "exec_command", "raw: {raw}");
-                assert_eq!(decision.protocol().tool_family(), ToolFamily::Unknown);
-            }
-        }
-    }
-
-    /// Gemini CLI's `run_shell_command` and `read_many_files` fell to the
-    /// unknown family, so `ignore_paths` never read their arguments and the
-    /// raw output reached the spool. `read_many_files` takes globs that Gemini
-    /// expands case-insensitively with a recursive `**`; any one that names or
-    /// can expand into an ignored path drops the call, and glob syntax the
-    /// matcher cannot evaluate fails closed.
-    #[test]
-    fn gemini_cli_shell_and_read_many_files_honor_ignored_paths() {
-        let policy = CapturePolicy::resolve(
-            CaptureSource::Parsed(&CaptureConfig {
-                ignore_paths: vec!["docs/adr/**".into()],
-            }),
-            "/repo",
-            None,
-        );
-        let gemini = |tool: &str, input: Value| {
-            json!({"hook_event_name": "AfterTool", "tool_name": tool, "tool_input": input,
-                "tool_response": {"llmContent": "SENTINEL_CONTENT"}})
-        };
-        let read_many = |include: &[&str]| gemini("read_many_files", json!({"include": include}));
-        let shell = |input: Value| gemini("run_shell_command", input);
-        for (raw, expected, family) in [
-            (
-                read_many(&["docs/adr/x.md"]),
-                CaptureDisposition::Drop,
-                ToolFamily::File,
-            ),
-            (
-                read_many(&["README.md", "docs/adr/x.md"]),
-                CaptureDisposition::Drop,
-                ToolFamily::File,
-            ),
-            (
-                read_many(&["docs/adr"]),
-                CaptureDisposition::Drop,
-                ToolFamily::File,
-            ),
-            (
-                read_many(&["docs/*/x.md"]),
-                CaptureDisposition::Drop,
-                ToolFamily::File,
-            ),
-            (
-                read_many(&["**/*.md"]),
-                CaptureDisposition::Drop,
-                ToolFamily::File,
-            ),
-            (
-                read_many(&["docs/**"]),
-                CaptureDisposition::Drop,
-                ToolFamily::File,
-            ),
-            (
-                read_many(&["/repo/**/x.md"]),
-                CaptureDisposition::Drop,
-                ToolFamily::File,
-            ),
-            (
-                read_many(&["Docs/ADR/x.md"]),
-                CaptureDisposition::Drop,
-                ToolFamily::File,
-            ),
-            (
-                read_many(&[r"docs\adr\x.md"]),
-                CaptureDisposition::Drop,
-                ToolFamily::File,
-            ),
-            (
-                read_many(&[
-                    "src/**/*.rs",
-                    "*.md",
-                    "docs/guide.md",
-                    "docs/adr-notes/x.md",
-                ]),
-                CaptureDisposition::Keep,
-                ToolFamily::File,
-            ),
-            (
-                read_many(&["src/**"]),
-                CaptureDisposition::Keep,
-                ToolFamily::File,
-            ),
-            (
-                read_many(&["/elsewhere/**/*.md"]),
-                CaptureDisposition::Keep,
-                ToolFamily::File,
-            ),
-            // `exclude` cannot be trusted to subtract an ignored path.
-            (
-                gemini(
-                    "read_many_files",
-                    json!({"include": ["docs/**"], "exclude": ["docs/adr/**"]}),
-                ),
-                CaptureDisposition::Drop,
-                ToolFamily::File,
-            ),
-            // Pre-rename spelling of the same tool.
-            (
-                gemini("read_many_files", json!({"paths": ["docs/adr/x.md"]})),
-                CaptureDisposition::Drop,
-                ToolFamily::File,
-            ),
-            (
-                gemini(
-                    "read_many_files",
-                    json!({"paths": ["README.md"], "include": ["docs/adr/*"]}),
-                ),
-                CaptureDisposition::Drop,
-                ToolFamily::File,
-            ),
-            // Unprovable globs and shapes fail closed to metadata only.
-            (
-                read_many(&["docs/ad[r]/x.md"]),
-                CaptureDisposition::MetadataOnly,
-                ToolFamily::File,
-            ),
-            (
-                read_many(&["docs/{adr,x}/*.md"]),
-                CaptureDisposition::MetadataOnly,
-                ToolFamily::File,
-            ),
-            (
-                read_many(&["README.md", "!(x)"]),
-                CaptureDisposition::MetadataOnly,
-                ToolFamily::File,
-            ),
-            (
-                read_many(&[]),
-                CaptureDisposition::MetadataOnly,
-                ToolFamily::File,
-            ),
-            (
-                gemini("read_many_files", json!({"include": ["README.md", 7]})),
-                CaptureDisposition::MetadataOnly,
-                ToolFamily::File,
-            ),
-            (
-                shell(json!({"command": "cat docs/adr/x.md"})),
-                CaptureDisposition::Drop,
-                ToolFamily::NonFile,
-            ),
-            (
-                shell(json!({"command": "cat x.md", "dir_path": "docs/adr"})),
-                CaptureDisposition::Drop,
-                ToolFamily::NonFile,
-            ),
-            (
-                shell(json!({"command": "cat x.md", "dir_path": "/repo/docs/adr"})),
-                CaptureDisposition::Drop,
-                ToolFamily::NonFile,
-            ),
-            (
-                shell(json!({"command": "cat x.md", "directory": "docs/adr"})),
-                CaptureDisposition::Drop,
-                ToolFamily::NonFile,
-            ),
-            (
-                shell(json!({"command": "cat README.md", "description": "show"})),
-                CaptureDisposition::Keep,
-                ToolFamily::NonFile,
-            ),
-            (
-                shell(json!({"command": "cat x.md", "dir_path": "src"})),
-                CaptureDisposition::Keep,
-                ToolFamily::NonFile,
-            ),
-            (
-                gemini("list_directory", json!({"dir_path": "docs"})),
-                CaptureDisposition::Drop,
-                ToolFamily::SearchList,
-            ),
-            (
-                gemini("search_file_content", json!({"pattern": "x"})),
-                CaptureDisposition::Drop,
-                ToolFamily::SearchList,
-            ),
-            (
-                gemini("grep_search", json!({"pattern": "x"})),
-                CaptureDisposition::Drop,
-                ToolFamily::SearchList,
-            ),
-            (
-                gemini("glob", json!({"pattern": "**/*.md"})),
-                CaptureDisposition::Drop,
-                ToolFamily::SearchList,
-            ),
-            (
-                gemini("read_file", json!({"file_path": "docs/adr/x.md"})),
-                CaptureDisposition::Drop,
-                ToolFamily::File,
-            ),
-            (
-                gemini(
-                    "write_file",
-                    json!({"file_path": "docs/adr/x.md", "content": "x"}),
-                ),
-                CaptureDisposition::Drop,
-                ToolFamily::File,
-            ),
-            (
-                gemini(
-                    "replace",
-                    json!({"file_path": "docs/adr/x.md", "old_string": "a", "new_string": "b"}),
-                ),
-                CaptureDisposition::Drop,
-                ToolFamily::File,
-            ),
-            (
-                gemini("read_file", json!({"file_path": "README.md"})),
-                CaptureDisposition::Keep,
-                ToolFamily::File,
-            ),
-        ] {
-            let decision = policy.inspect(AgentKind::GeminiCli, &raw, "/repo");
-            assert_eq!(decision.protocol().disposition(), expected, "raw: {raw}");
-            assert_eq!(decision.protocol().tool_family(), family, "raw: {raw}");
-        }
-
-        // Windows host: Gemini normalizes `\` and ignores case like the drive.
-        let windows = CapturePolicy::resolve(
-            CaptureSource::Parsed(&CaptureConfig {
-                ignore_paths: vec!["docs/adr/**".into()],
-            }),
-            r"C:\repo",
-            None,
-        );
-        for (include, expected) in [
-            (r"DOCS\adr\*.md", CaptureDisposition::Drop),
-            (r"C:\repo\**\x.md", CaptureDisposition::Drop),
-            (r"src\**\*.rs", CaptureDisposition::Keep),
-        ] {
-            let raw = read_many(&[include]);
-            let decision = windows.inspect(AgentKind::GeminiCli, &raw, r"C:\repo");
-            assert_eq!(decision.protocol().disposition(), expected, "{include}");
-        }
-
-        // An absolute `dir_path` locates the shell call for rerouting, exactly
-        // like a `workdir`; a relative one cannot prove a checkout.
-        assert_eq!(
-            absolute_tool_location_paths(
-                AgentKind::GeminiCli,
-                &shell(json!({"command": "ls", "dir_path": "/other/repo"})),
-                "/repo"
-            ),
-            Some(vec!["/other/repo".to_owned()])
-        );
-        assert_eq!(
-            absolute_tool_location_paths(
-                AgentKind::GeminiCli,
-                &shell(json!({"command": "ls", "dir_path": "sub"})),
-                "/repo"
-            ),
-            None
-        );
-    }
-
-    /// Gemini CLI reads a directory entry of `read_many_files` as
-    /// `entry/**`, so an entry naming an ancestor of an ignored directory
-    /// (`docs`, `.`) reads the ignored files. The shared vectors attempt it
-    /// through both payload shapes; `src` and `README.md` are the controls.
-    #[test]
-    fn read_many_files_directory_entries_cannot_reach_ignored_paths() {
-        let fixture: Value =
-            serde_json::from_str(include_str!("../tests/fixtures/capture-policy.json")).unwrap();
-        let section = &fixture["read_many_files_directories"];
-        let ignore_paths = section["ignore_paths"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|pattern| pattern.as_str().unwrap().to_owned())
-            .collect();
-        let policy = CapturePolicy::resolve(
-            CaptureSource::Parsed(&CaptureConfig { ignore_paths }),
-            "/repo",
-            None,
-        );
-        for vector in section["vectors"].as_array().unwrap() {
-            let include = &vector["include"];
-            for (agent, raw) in [
-                (
-                    AgentKind::GeminiCli,
-                    json!({"tool_name": "read_many_files", "tool_input": {"include": include}}),
-                ),
-                (
-                    AgentKind::OpenCode,
-                    json!({"tool": "read_many_files", "args": {"include": include}}),
-                ),
-            ] {
-                let protocol = policy.inspect(agent, &raw, "/repo").protocol().clone();
-                assert_eq!(
-                    serde_json::to_value(protocol.disposition()).unwrap(),
-                    vector["disposition"],
-                    "{raw}"
-                );
-                assert_eq!(protocol.tool_family(), ToolFamily::File);
-            }
-        }
-        assert!(glob_matches_below("/repo/docs/adr/**", "/repo", false));
-        assert!(glob_matches_below("/**", "/", false));
-        assert!(glob_matches_below("/repo/**/*.md", "/repo/src", false));
-        assert!(!glob_matches_below("/repo/*.md", "/repo/README.md", false));
-        assert!(!glob_matches_below("/repo/docs/adr/**", "/repo/src", false));
-        assert!(glob_matches_below("C:/Docs/**", "c:/docs", true));
     }
 
     /// Tools that read back an earlier command's output are stripped to
@@ -6421,7 +4671,7 @@ mod tests {
         let invalid = CapturePolicy::resolve(CaptureSource::Invalid, "/repo", None);
         let inactive = CapturePolicy::resolve(CaptureSource::Absent, "/repo", None);
         for policy in [&active, &invalid] {
-            let decision = policy.inspect(AgentKind::ClaudeCode, &reader, "/repo");
+            let decision = policy.inspect(AgentKind::Other, &reader, "/repo");
             assert_eq!(
                 decision.protocol().disposition(),
                 CaptureDisposition::MetadataOnly
@@ -6431,7 +4681,7 @@ mod tests {
         }
         assert_eq!(
             inactive
-                .inspect(AgentKind::ClaudeCode, &reader, "/repo")
+                .inspect(AgentKind::Other, &reader, "/repo")
                 .protocol()
                 .disposition(),
             CaptureDisposition::Keep
@@ -6440,7 +4690,7 @@ mod tests {
         let other = json!({"tool_name": "FutureTool", "tool_input": {"bash_id": "b1"}});
         assert_eq!(
             active
-                .inspect(AgentKind::ClaudeCode, &other, "/repo")
+                .inspect(AgentKind::Other, &other, "/repo")
                 .protocol()
                 .disposition(),
             CaptureDisposition::Keep
@@ -6466,7 +4716,7 @@ mod tests {
         };
         let disposition = |policy: &CapturePolicy, raw: &Value| {
             policy
-                .inspect(AgentKind::ClaudeCode, raw, "/repo")
+                .inspect(AgentKind::Other, raw, "/repo")
                 .protocol()
                 .disposition()
         };
@@ -6479,7 +4729,7 @@ mod tests {
             "/tmp/pi-bash-0a1b2c3d4e5f6a7b.log",
         ] {
             for policy in [&active, &invalid] {
-                let decision = policy.inspect(AgentKind::ClaudeCode, &read(spool), "/repo");
+                let decision = policy.inspect(AgentKind::Other, &read(spool), "/repo");
                 assert_eq!(
                     decision.protocol().disposition(),
                     CaptureDisposition::MetadataOnly,
@@ -6531,8 +4781,7 @@ mod tests {
     #[test]
     fn windows_lookup_locations_keep_glob_segments_whole() {
         let cwd = r"C:\work\b";
-        let locations =
-            |raw: &Value| capture_lookup_locations(AgentKind::ClaudeCode, raw, cwd, None);
+        let locations = |raw: &Value| capture_lookup_locations(AgentKind::Other, raw, cwd, None);
         assert_eq!(
             locations(&bash("cat {.,}./a/secrets.env")),
             Some(vec![
@@ -6547,104 +4796,6 @@ mod tests {
                 r"C:\work\b\a\secrets.env".to_owned()
             ])
         );
-    }
-
-    /// The locations a call names, for the hook to find each one's marker:
-    /// every file target, and every shell argument that spells a path,
-    /// resolved from the tool's directory, plus that directory.
-    #[test]
-    fn capture_lookup_locations_name_every_path_a_call_spells() {
-        let locations = |raw: &Value| {
-            capture_lookup_locations(AgentKind::ClaudeCode, raw, "/work/b", Some("/home/me"))
-        };
-        assert_eq!(
-            locations(
-                &json!({"tool_name": "Read", "tool_input": {"file_path": "../a/secrets.env"}})
-            ),
-            Some(vec!["/work/a/secrets.env".to_owned()])
-        );
-        assert_eq!(
-            locations(&bash(
-                "cat ../a/secrets.env /abs/c/x ~/notes/y \"~/lit/z\" secrets.env --in=../d/e"
-            )),
-            Some(vec![
-                "/work/b".to_owned(),
-                "/work/a/secrets.env".to_owned(),
-                "/abs/c/x".to_owned(),
-                "/home/me/notes/y".to_owned(),
-                "/work/b/~/lit/z".to_owned(),
-                "/work/d/e".to_owned(),
-            ])
-        );
-        assert_eq!(
-            locations(&json!({
-                "tool_name": "Bash",
-                "tool_input": {"command": "cat secrets.env", "workdir": "/work/a"},
-            })),
-            Some(vec!["/work/a".to_owned()])
-        );
-        assert_eq!(
-            capture_lookup_locations(
-                AgentKind::ClaudeCode,
-                &json!({"tool_name": "Read", "tool_input": {"file_path": "C:\\a\\x.md"}}),
-                "C:\\b",
-                None,
-            ),
-            Some(vec!["C:\\a\\x.md".to_owned()])
-        );
-        // A search/list tool names its root and the path-like globs below it;
-        // a grep pattern is a regular expression and names nothing.
-        assert_eq!(
-            locations(
-                &json!({"tool_name": "Grep", "tool_input": {"path": "../a", "pattern": "x/y", "glob": "*.env"}})
-            ),
-            Some(vec!["/work/a".to_owned()])
-        );
-        assert_eq!(
-            locations(&json!({"tool_name": "Glob", "tool_input": {"pattern": "../a/*.env"}})),
-            Some(vec!["/work/a/*.env".to_owned()])
-        );
-        assert_eq!(
-            locations(
-                &json!({"tool_name": "grep_search", "tool_input": {"dir_path": "/work/a", "include": ["src/*.rs", "*.md"]}})
-            ),
-            Some(vec!["/work/a".to_owned(), "/work/a/src/*.rs".to_owned()])
-        );
-        assert_eq!(
-            locations(&json!({"tool_name": "Grep", "tool_input": {"pattern": "x"}})),
-            Some(Vec::new())
-        );
-        // An argument that is not a string, a file tool without readable
-        // targets, and a target that cannot be resolved prove nothing.
-        for raw in [
-            json!({"tool_name": "Grep", "tool_input": {"path": 7}}),
-            json!({"tool_name": "Glob", "tool_input": {"pattern": 7}}),
-            json!({"tool_name": "Read", "tool_input": {}}),
-            json!({"tool_name": "Read", "tool_input": {"file_path": "C:x"}}),
-            json!({"tool_name": "apply_patch", "tool_input": {"command": "no headers"}}),
-        ] {
-            assert_eq!(locations(&raw), None, "{raw}");
-        }
-        // An `apply_patch` names the files its headers name.
-        assert_eq!(
-            locations(
-                &json!({"tool_name": "apply_patch", "tool_input": {"command": "*** Begin Patch\n*** Update File: ../a/secrets.env\n*** Move to: c.md\n*** End Patch"}})
-            ),
-            Some(vec![
-                "/work/a/secrets.env".to_owned(),
-                "/work/b/c.md".to_owned()
-            ])
-        );
-        // Unknown tools stay with the event's own policy.
-        assert_eq!(
-            locations(&json!({"tool_name": "FutureTool", "tool_input": {"path": "../a/x"}})),
-            Some(Vec::new())
-        );
-        let many = (0..=MAX_LOOKUP_LOCATIONS)
-            .map(|index| format!("d{index}/x"))
-            .collect::<Vec<_>>()
-            .join(" ");
-        assert_eq!(locations(&bash(&format!("cat {many}"))), None);
     }
 
     /// A glob location is followed from its literal root; syntax that can
@@ -6842,7 +4993,7 @@ mod tests {
         let read_many = |include: &[&str]| json!({"tool_name": "read_many_files", "tool_input": {"include": include}});
         let decide = |raw: &Value| {
             policy
-                .inspect(AgentKind::GeminiCli, raw, "/repo")
+                .inspect(AgentKind::Other, raw, "/repo")
                 .protocol()
                 .disposition()
         };
@@ -6870,9 +5021,8 @@ mod tests {
             decide(&read_many(&["src/**/../lib"])),
             CaptureDisposition::Keep
         );
-        let locations = |raw: &Value| {
-            capture_lookup_locations(AgentKind::ClaudeCode, raw, "/work/b", None).unwrap()
-        };
+        let locations =
+            |raw: &Value| capture_lookup_locations(AgentKind::Other, raw, "/work/b", None).unwrap();
         for raw in [
             bash("cat ./**/../a/secrets.env"),
             json!({"tool_name": "Glob", "tool_input": {"pattern": "./**/../a/secrets.env"}}),
@@ -6959,8 +5109,7 @@ mod tests {
             Err(())
         );
         let locations = |command: &str| {
-            capture_lookup_locations(AgentKind::ClaudeCode, &bash(command), "/work/b", None)
-                .unwrap()
+            capture_lookup_locations(AgentKind::Other, &bash(command), "/work/b", None).unwrap()
         };
         for command in [
             "cat .*/a/secrets.env",
@@ -6998,8 +5147,7 @@ mod tests {
     #[test]
     fn glob_groups_and_ansi_c_escapes_reach_the_marker_lookup() {
         let locations = |command: &str| {
-            capture_lookup_locations(AgentKind::ClaudeCode, &bash(command), "/work/b", None)
-                .unwrap()
+            capture_lookup_locations(AgentKind::Other, &bash(command), "/work/b", None).unwrap()
         };
         for (command, location) in [
             ("cat ../(a)/secrets.env", "/work/(a)/secrets.env"),
@@ -7091,7 +5239,7 @@ mod tests {
             "tool_input": {"command": "*** Begin Patch\n*** Add File: x.rs\n+x\n  \t*** Update File: ../a/secrets.env\n+KEY\n*** End Patch"},
         });
         assert_eq!(
-            capture_lookup_locations(AgentKind::Codex, &patch, "/work/b", None),
+            capture_lookup_locations(AgentKind::Other, &patch, "/work/b", None),
             Some(vec![
                 "/work/b/x.rs".to_owned(),
                 "/work/a/secrets.env".to_owned()
@@ -7102,7 +5250,7 @@ mod tests {
             "tool_input": {"pattern": "KEY", "path": "/work", "file_glob": "a/*.env"},
         });
         assert_eq!(
-            capture_lookup_locations(AgentKind::Hermes, &search, "/work/b", None),
+            capture_lookup_locations(AgentKind::Other, &search, "/work/b", None),
             Some(vec!["/work".to_owned(), "/work/a/*.env".to_owned()])
         );
     }
@@ -7118,7 +5266,7 @@ mod tests {
         ] {
             assert_eq!(
                 policy
-                    .inspect(AgentKind::ClaudeCode, &raw, "/repo")
+                    .inspect(AgentKind::Other, &raw, "/repo")
                     .protocol()
                     .disposition(),
                 CaptureDisposition::MetadataOnly
@@ -7128,7 +5276,7 @@ mod tests {
         assert_eq!(
             inactive
                 .inspect(
-                    AgentKind::ClaudeCode,
+                    AgentKind::Other,
                     &json!({"tool_name": "Grep", "tool_input": {"pattern": "x"}}),
                     "/repo"
                 )
@@ -7136,47 +5284,6 @@ mod tests {
                 .disposition(),
             CaptureDisposition::Keep
         );
-    }
-
-    /// Copilot CLI's runtime `view`/`create` names are file tools for that
-    /// agent only; another agent's same-named tool stays unknown.
-    #[test]
-    fn copilot_cli_runtime_file_tools_are_scoped_to_copilot() {
-        assert_eq!(
-            agent_family(AgentKind::CopilotCli, "view"),
-            ToolFamily::File
-        );
-        assert_eq!(
-            agent_family(AgentKind::CopilotCli, "create"),
-            ToolFamily::File
-        );
-        assert_eq!(
-            agent_family(AgentKind::CopilotCli, "str_replace_editor"),
-            ToolFamily::File
-        );
-        assert_eq!(
-            agent_family(AgentKind::CopilotCli, "rg"),
-            ToolFamily::SearchList
-        );
-        assert_eq!(
-            agent_family(AgentKind::CopilotCli, "edit"),
-            ToolFamily::File
-        );
-        assert_eq!(
-            agent_family(AgentKind::ClaudeCode, "view"),
-            ToolFamily::Unknown
-        );
-        assert_eq!(
-            agent_family(AgentKind::OpenCode, "create"),
-            ToolFamily::Unknown
-        );
-        let metadata = tool_observation_metadata(
-            AgentKind::CopilotCli,
-            &json!({"tool_name": "view", "tool_input": {"path": "src/lib.rs"}}),
-            true,
-        )
-        .unwrap();
-        assert_eq!(metadata.tool_family, ToolFamily::File);
     }
 
     #[test]
@@ -7269,7 +5376,7 @@ mod tests {
             (r"Get-Content -Path:src\lib.rs", CaptureDisposition::Keep),
             ("git status", CaptureDisposition::Keep),
         ] {
-            let decision = policy.inspect(AgentKind::ClaudeCode, &powershell(command), r"C:\repo");
+            let decision = policy.inspect(AgentKind::Other, &powershell(command), r"C:\repo");
             assert_eq!(
                 decision.protocol().tool_family(),
                 ToolFamily::NonFile,
@@ -7282,7 +5389,7 @@ mod tests {
         let invalid = CapturePolicy::resolve(CaptureSource::Invalid, r"C:\repo", None);
         assert_eq!(
             invalid
-                .inspect(AgentKind::ClaudeCode, &powershell("git status"), r"C:\repo")
+                .inspect(AgentKind::Other, &powershell("git status"), r"C:\repo")
                 .protocol()
                 .disposition(),
             CaptureDisposition::MetadataOnly,
@@ -7295,7 +5402,7 @@ mod tests {
         let inactive = CapturePolicy::resolve(CaptureSource::Absent, "/repo", None);
         assert_eq!(
             inactive
-                .inspect(AgentKind::ClaudeCode, &raw, "/repo")
+                .inspect(AgentKind::Other, &raw, "/repo")
                 .protocol()
                 .disposition(),
             CaptureDisposition::Keep
@@ -7303,7 +5410,7 @@ mod tests {
         // A broken marker strips a shell call like a file call, but a
         // non-file tool with no command (`web_search`) keeps its body.
         let invalid = CapturePolicy::resolve(CaptureSource::Invalid, "/repo", None);
-        let decision = invalid.inspect(AgentKind::ClaudeCode, &raw, "/repo");
+        let decision = invalid.inspect(AgentKind::Other, &raw, "/repo");
         assert_eq!(
             decision.protocol().disposition(),
             CaptureDisposition::MetadataOnly
@@ -7313,7 +5420,7 @@ mod tests {
         assert_eq!(
             invalid
                 .inspect(
-                    AgentKind::ClaudeCode,
+                    AgentKind::Other,
                     &json!({"tool_name": "web_search", "tool_input": {"query": "docs/adr"}}),
                     "/repo"
                 )
@@ -7331,7 +5438,7 @@ mod tests {
         );
         assert_eq!(
             homeless
-                .inspect(AgentKind::ClaudeCode, &bash("cat ~/notes/x.md"), "/repo")
+                .inspect(AgentKind::Other, &bash("cat ~/notes/x.md"), "/repo")
                 .protocol()
                 .disposition(),
             CaptureDisposition::Keep
@@ -7346,7 +5453,7 @@ mod tests {
         let long = format!("cat {}", vec!["docs/x".repeat(400); 8].join(" "));
         assert_eq!(
             costly
-                .inspect(AgentKind::ClaudeCode, &bash(&long), "/repo")
+                .inspect(AgentKind::Other, &bash(&long), "/repo")
                 .protocol()
                 .disposition(),
             CaptureDisposition::Drop
@@ -7392,7 +5499,7 @@ mod tests {
         let body = metadata_only_body(
             Some("s"),
             Some("/repo"),
-            &policy.inspect(AgentKind::Codex, &raw, "/repo"),
+            &policy.inspect(AgentKind::Other, &raw, "/repo"),
         );
         let text = body.to_string();
         for sentinel in [
@@ -7429,15 +5536,15 @@ mod tests {
         let policy = CapturePolicy::resolve(CaptureSource::Invalid, "/repo", None);
         for (agent, payload) in [
             (
-                AgentKind::ClaudeCode,
+                AgentKind::Other,
                 json!({"tool_name":"Bash","tool_input":{"command":7}}),
             ),
             (
-                AgentKind::Codex,
+                AgentKind::Other,
                 json!({"tool_name":"shell","tool_input":{"command":["cat", 7]}}),
             ),
             (
-                AgentKind::ClaudeCode,
+                AgentKind::Other,
                 json!({"tool_name":"Bash","tool_input":{"cmd_line":"cat secret/x.md"}}),
             ),
         ] {
@@ -7465,7 +5572,7 @@ mod tests {
         let as_string = json!({"tool_name":"shell","tool_input":{"command": script}});
         assert_eq!(
             policy
-                .inspect(AgentKind::Codex, &as_string, "/repo")
+                .inspect(AgentKind::Other, &as_string, "/repo")
                 .protocol()
                 .disposition(),
             CaptureDisposition::Keep,
@@ -7474,7 +5581,7 @@ mod tests {
         let as_argv = json!({"tool_name":"shell","tool_input":{"command":["bash","-lc",script]}});
         assert_eq!(
             policy
-                .inspect(AgentKind::Codex, &as_argv, "/repo")
+                .inspect(AgentKind::Other, &as_argv, "/repo")
                 .protocol()
                 .disposition(),
             CaptureDisposition::Keep,
@@ -7522,7 +5629,7 @@ mod tests {
         let policy = shell_policy();
         let decide = |command: &str| {
             policy
-                .inspect(AgentKind::ClaudeCode, &bash(command), "/repo")
+                .inspect(AgentKind::Other, &bash(command), "/repo")
                 .protocol()
                 .disposition()
         };
@@ -7591,7 +5698,7 @@ mod tests {
             json!({"tool_name": "shell", "tool_input": {"command": ["python3", "-c", "print(1)"]}});
         assert_eq!(
             policy
-                .inspect(AgentKind::Codex, &argv, "/repo")
+                .inspect(AgentKind::Other, &argv, "/repo")
                 .protocol()
                 .disposition(),
             CaptureDisposition::MetadataOnly
@@ -7599,7 +5706,7 @@ mod tests {
         let inactive = CapturePolicy::resolve(CaptureSource::Absent, "/repo", None);
         assert_eq!(
             inactive
-                .inspect(AgentKind::Codex, &argv, "/repo")
+                .inspect(AgentKind::Other, &argv, "/repo")
                 .protocol()
                 .disposition(),
             CaptureDisposition::Keep
@@ -7645,7 +5752,7 @@ mod tests {
         ] {
             assert_eq!(
                 policy
-                    .inspect(AgentKind::ClaudeCode, &bash(command), cwd)
+                    .inspect(AgentKind::Other, &bash(command), cwd)
                     .protocol()
                     .disposition(),
                 expected,
@@ -7666,7 +5773,7 @@ mod tests {
         ] {
             assert_eq!(
                 windows
-                    .inspect(AgentKind::ClaudeCode, &bash(command), r"C:\repo")
+                    .inspect(AgentKind::Other, &bash(command), r"C:\repo")
                     .protocol()
                     .disposition(),
                 expected,
@@ -7696,52 +5803,13 @@ mod tests {
         ] {
             assert_eq!(
                 policy
-                    .inspect(AgentKind::ClaudeCode, &bash(command), "/repo")
+                    .inspect(AgentKind::Other, &bash(command), "/repo")
                     .protocol()
                     .disposition(),
                 expected,
                 "{command}"
             );
         }
-    }
-
-    /// Antigravity's `run_command` runs in its `Cwd` argument, so a relative
-    /// argument resolves from there; another agent's `Cwd` key means nothing.
-    #[test]
-    fn antigravity_run_command_resolves_arguments_from_its_cwd() {
-        let policy = shell_policy();
-        let run = |command: &str, cwd: &str| json!({"toolCall": {"name": "run_command", "args": {"CommandLine": command, "Cwd": cwd}}});
-        for (raw, expected) in [
-            (run("cat 1.md", "/repo/docs/adr"), CaptureDisposition::Drop),
-            (run("cat adr/1.md", "docs"), CaptureDisposition::Drop),
-            (run("cat 1.md", "/repo/src"), CaptureDisposition::Keep),
-            (run("cat docs/adr/1.md", "/repo"), CaptureDisposition::Drop),
-        ] {
-            assert_eq!(
-                policy
-                    .inspect(AgentKind::AntigravityCli, &raw, "/repo")
-                    .protocol()
-                    .disposition(),
-                expected,
-                "{raw}"
-            );
-        }
-        let other = json!({"tool_name": "Bash", "tool_input": {"command": "cat 1.md", "Cwd": "/repo/docs/adr"}});
-        assert_eq!(
-            policy
-                .inspect(AgentKind::ClaudeCode, &other, "/repo")
-                .protocol()
-                .disposition(),
-            CaptureDisposition::Keep
-        );
-        assert_eq!(
-            absolute_tool_location_paths(
-                AgentKind::AntigravityCli,
-                &run("ls", "/other/repo"),
-                "/repo"
-            ),
-            Some(vec!["/other/repo".to_owned()])
-        );
     }
     /// On a Windows host cmd's caret and PowerShell's backquote escape the
     /// next character whatever the shell tool, so their readings without the
@@ -7762,7 +5830,7 @@ mod tests {
             (r"type src\ma^in.rs", CaptureDisposition::Keep),
             ("echo a^b", CaptureDisposition::Keep),
         ] {
-            let decision = windows.inspect(AgentKind::ClaudeCode, &bash(command), r"C:\repo");
+            let decision = windows.inspect(AgentKind::Other, &bash(command), r"C:\repo");
             assert_eq!(decision.protocol().disposition(), expected, "{command}");
         }
         let posix = CapturePolicy::resolve(
@@ -7775,7 +5843,7 @@ mod tests {
         for command in ["cat docs/ad^r/x.md", "cat docs/ad`r`/x.md"] {
             assert_eq!(
                 posix
-                    .inspect(AgentKind::ClaudeCode, &bash(command), "/repo")
+                    .inspect(AgentKind::Other, &bash(command), "/repo")
                     .protocol()
                     .disposition(),
                 CaptureDisposition::Keep,
@@ -7807,7 +5875,7 @@ mod tests {
             ] {
                 assert_eq!(
                     policy(fold_case)
-                        .inspect(AgentKind::ClaudeCode, &raw, "/repo")
+                        .inspect(AgentKind::Other, &raw, "/repo")
                         .protocol()
                         .disposition(),
                     expected,
@@ -7818,7 +5886,7 @@ mod tests {
         let public = json!({"tool_name": "Read", "tool_input": {"file_path": "SRC/x.md"}});
         assert_eq!(
             policy(true)
-                .inspect(AgentKind::ClaudeCode, &public, "/repo")
+                .inspect(AgentKind::Other, &public, "/repo")
                 .protocol()
                 .disposition(),
             CaptureDisposition::Keep
@@ -7842,7 +5910,7 @@ mod tests {
             for raw in [read, bash(&format!("cat {path}"))] {
                 assert_eq!(
                     unicode
-                        .inspect(AgentKind::ClaudeCode, &raw, "/repo")
+                        .inspect(AgentKind::Other, &raw, "/repo")
                         .protocol()
                         .disposition(),
                     CaptureDisposition::Drop,
@@ -7853,7 +5921,7 @@ mod tests {
         let other = json!({"tool_name": "Read", "tool_input": {"file_path": "ecrits/arger/x.md"}});
         assert_eq!(
             unicode
-                .inspect(AgentKind::ClaudeCode, &other, "/repo")
+                .inspect(AgentKind::Other, &other, "/repo")
                 .protocol()
                 .disposition(),
             CaptureDisposition::Keep
@@ -7941,7 +6009,7 @@ mod tests {
         ] {
             assert_eq!(
                 policy
-                    .inspect(AgentKind::ClaudeCode, &bash(command), "/repo")
+                    .inspect(AgentKind::Other, &bash(command), "/repo")
                     .protocol()
                     .disposition(),
                 CaptureDisposition::Keep,

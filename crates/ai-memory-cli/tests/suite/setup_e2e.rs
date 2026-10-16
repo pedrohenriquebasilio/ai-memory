@@ -101,39 +101,6 @@ fn text(out: &Output) -> String {
     )
 }
 
-/// Without `--yes` and with no terminal on stdin, `setup` shows the plan,
-/// changes nothing and exits non-zero naming `--yes`.
-#[test]
-fn setup_without_yes_and_without_a_terminal_changes_nothing() {
-    let sandbox = Sandbox::new();
-    std::fs::create_dir_all(sandbox.home.join(".claude/projects")).unwrap();
-    let before = sandbox.snapshot();
-    let port = crate::e2e_support::free_port();
-    let out = sandbox.cmd(Some(port)).arg("setup").output().unwrap();
-    assert!(!out.status.success(), "{}", text(&out));
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    assert!(stdout.contains("ai-memory setup will:"), "{}", text(&out));
-    assert!(
-        stdout.contains("1. claude-code: MCP + hooks + skills (found its session store at"),
-        "{}",
-        text(&out)
-    );
-    assert!(
-        stdout.contains("not in this plan (add with --agent <name>):") && stdout.contains("cursor"),
-        "{}",
-        text(&out)
-    );
-    assert!(
-        String::from_utf8_lossy(&out.stderr).contains("--yes"),
-        "{}",
-        text(&out)
-    );
-    // Any command opens its log under the data dir; nothing else may appear.
-    assert!(!sandbox.data_dir().join("config.toml").exists());
-    assert!(!sandbox.data_dir().join("auth-tokens").exists());
-    assert_eq!(sandbox.snapshot(), before, "setup wrote without --yes");
-}
-
 /// `--plan --json` prints a parseable plan naming the detected agent and its
 /// evidence, exits zero, and writes nothing, with no terminal and no `--yes`.
 #[test]

@@ -58,9 +58,7 @@ const ASSISTANT_MESSAGE_FIELDS: &[&str] = &["last_assistant_message"];
 #[must_use]
 pub fn assistant_message_field(agent: AgentKind, event: HookEvent) -> Option<&'static str> {
     match (agent, event) {
-        (AgentKind::ClaudeCode | AgentKind::Codex | AgentKind::OpenCode, HookEvent::Stop) => {
-            Some("last_assistant_message")
-        }
+        (AgentKind::Other, HookEvent::Stop) => Some("last_assistant_message"),
         _ => None,
     }
 }
@@ -243,10 +241,7 @@ mod tests {
         ];
         for agent in AgentKind::ALL {
             for event in events {
-                let expected = matches!(
-                    agent,
-                    AgentKind::ClaudeCode | AgentKind::Codex | AgentKind::OpenCode
-                ) && event == HookEvent::Stop;
+                let expected = matches!(agent, AgentKind::Other) && event == HookEvent::Stop;
                 assert_eq!(
                     assistant_message_field(agent, event).is_some(),
                     expected,
@@ -329,7 +324,7 @@ mod tests {
             "session_id": "s1",
             "last_assistant_message": "fixed the bug"
         });
-        let out = transform_for_client(&mut raw, AgentKind::ClaudeCode, HookEvent::Stop);
+        let out = transform_for_client(&mut raw, AgentKind::Other, HookEvent::Stop);
         assert!(out.changed && out.captured);
         assert!(raw.get("last_assistant_message").is_none());
         let marker = raw.get(ASSISTANT_MARKER_KEY).expect("protocol spliced");
@@ -343,7 +338,7 @@ mod tests {
         // A built-in secret pattern must be redacted in the excerpt.
         let secret = "AKIA".to_string() + &"A".repeat(16); // AWS access key id shape
         let mut raw = serde_json::json!({ "last_assistant_message": format!("key {secret}") });
-        let out = transform_for_client(&mut raw, AgentKind::ClaudeCode, HookEvent::Stop);
+        let out = transform_for_client(&mut raw, AgentKind::Other, HookEvent::Stop);
         assert!(out.captured);
         let excerpt = raw[ASSISTANT_MARKER_KEY]["excerpt"].as_str().unwrap();
         assert!(!excerpt.contains(&secret), "secret survived: {excerpt}");
@@ -357,7 +352,7 @@ mod tests {
     fn client_transform_truncates_multibyte_within_cap() {
         let big = "é".repeat(ASSISTANT_EXCERPT_MAX_BYTES); // 2 bytes each → 2x the cap
         let mut raw = serde_json::json!({ "last_assistant_message": big });
-        let out = transform_for_client(&mut raw, AgentKind::ClaudeCode, HookEvent::Stop);
+        let out = transform_for_client(&mut raw, AgentKind::Other, HookEvent::Stop);
         assert!(out.captured);
         let excerpt = raw[ASSISTANT_MARKER_KEY]["excerpt"].as_str().unwrap();
         assert!(excerpt.len() <= ASSISTANT_EXCERPT_MAX_BYTES, "over cap");
@@ -370,7 +365,7 @@ mod tests {
     fn client_transform_strips_but_omits_protocol_for_empty_or_oversized() {
         for value in ["", &"x".repeat(ASSISTANT_MESSAGE_MAX_INPUT_BYTES + 1)] {
             let mut raw = serde_json::json!({ "last_assistant_message": value });
-            let out = transform_for_client(&mut raw, AgentKind::ClaudeCode, HookEvent::Stop);
+            let out = transform_for_client(&mut raw, AgentKind::Other, HookEvent::Stop);
             assert!(!out.captured, "value {:?} must not capture", value.len());
             assert!(
                 raw.get("last_assistant_message").is_none(),
@@ -388,7 +383,7 @@ mod tests {
         // A non-candidate (agent, event): a candidate agent on a non-Stop event.
         // The raw field is still stripped defensively, and no protocol is spliced.
         let mut raw = serde_json::json!({ "last_assistant_message": "hi" });
-        let out = transform_for_client(&mut raw, AgentKind::Codex, HookEvent::PostToolUse);
+        let out = transform_for_client(&mut raw, AgentKind::Other, HookEvent::PostToolUse);
         assert!(!out.captured);
         assert!(raw.get("last_assistant_message").is_none());
         assert!(raw.get(ASSISTANT_MARKER_KEY).is_none());
@@ -399,7 +394,7 @@ mod tests {
         // Codex Stop is now a candidate (#743): the assistant excerpt is captured
         // and the raw field removed, same as Claude Code.
         let mut raw = serde_json::json!({ "last_assistant_message": "codex done" });
-        let out = transform_for_client(&mut raw, AgentKind::Codex, HookEvent::Stop);
+        let out = transform_for_client(&mut raw, AgentKind::Other, HookEvent::Stop);
         assert!(out.captured);
         assert!(raw.get("last_assistant_message").is_none());
         assert!(raw.get(ASSISTANT_MARKER_KEY).is_some());
@@ -412,7 +407,7 @@ mod tests {
             "last_assistant_message": format!("Completed work with {secret}"),
             "turn_checkpoint": true,
         });
-        let out = transform_for_client(&mut raw, AgentKind::OpenCode, HookEvent::Stop);
+        let out = transform_for_client(&mut raw, AgentKind::Other, HookEvent::Stop);
         assert!(out.captured && out.changed);
         assert!(raw.get("last_assistant_message").is_none());
         assert!(!raw.to_string().contains(&secret));
@@ -428,7 +423,7 @@ mod tests {
     #[test]
     fn backstop_populates_body_when_all_gates_pass() {
         let mut raw = serde_json::json!({ "last_assistant_message": "done" });
-        transform_for_client(&mut raw, AgentKind::ClaudeCode, HookEvent::Stop);
+        transform_for_client(&mut raw, AgentKind::Other, HookEvent::Stop);
         let mut env = stop_env(raw, true);
         apply_assistant_backstop(&mut env, true);
         assert_eq!(env.body_excerpt.as_deref(), Some("done"));
@@ -442,7 +437,7 @@ mod tests {
     fn backstop_drops_when_server_off_or_flag_absent() {
         let make = || {
             let mut raw = serde_json::json!({ "last_assistant_message": "done" });
-            transform_for_client(&mut raw, AgentKind::ClaudeCode, HookEvent::Stop);
+            transform_for_client(&mut raw, AgentKind::Other, HookEvent::Stop);
             raw
         };
         // Server disabled.

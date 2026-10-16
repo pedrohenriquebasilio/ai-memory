@@ -94,7 +94,7 @@ async fn session_end_readers_refuse_foreign_session_ids() {
         .await
         .unwrap();
     let other_ws = store.writer.get_or_create_workspace("other").await.unwrap();
-    let session = open_session(&store, ws, home, AgentKind::Codex).await;
+    let session = open_session(&store, ws, home, AgentKind::Other).await;
     store
         .writer
         .insert_observation(Sanitized::new(
@@ -923,7 +923,7 @@ async fn a_second_accept_cannot_steal_an_accepted_handoff() {
         .insert_handoff(NewHandoff {
             workspace_id: ws,
             project_id: proj,
-            from_agent: AgentKind::ClaudeCode,
+            from_agent: AgentKind::Other,
             to_agent: None,
             from_session_id: None,
             summary: "pick this up".into(),
@@ -947,19 +947,19 @@ async fn a_second_accept_cannot_steal_an_accepted_handoff() {
         receiving_cwd: None,
     };
 
-    let winner = open_session(&store, ws, proj, AgentKind::Codex).await;
-    let loser = open_session(&store, ws, proj, AgentKind::ClaudeCode).await;
+    let winner = open_session(&store, ws, proj, AgentKind::Other).await;
+    let loser = open_session(&store, ws, proj, AgentKind::Other).await;
 
     let first = store
         .writer
-        .accept_handoff(accept(AgentKind::Codex, winner))
+        .accept_handoff(accept(AgentKind::Other, winner))
         .await
         .unwrap();
     assert!(first, "the first accept claims the baton");
 
     let second = store
         .writer
-        .accept_handoff(accept(AgentKind::ClaudeCode, loser))
+        .accept_handoff(accept(AgentKind::Other, loser))
         .await
         .unwrap();
     assert!(
@@ -982,7 +982,7 @@ async fn a_second_accept_cannot_steal_an_accepted_handoff() {
 
     assert_eq!(
         accepted_by.as_deref(),
-        Some("codex"),
+        Some("other"),
         "the original accepter must still own the handoff"
     );
     assert_eq!(
@@ -1061,7 +1061,7 @@ async fn handoff_accept_rejects_foreign_or_missing_receiver_session() {
         .insert_handoff(NewHandoff {
             workspace_id: ws,
             project_id: proj,
-            from_agent: AgentKind::ClaudeCode,
+            from_agent: AgentKind::Other,
             to_agent: None,
             from_session_id: None,
             summary: "pick this up".into(),
@@ -1080,17 +1080,20 @@ async fn handoff_accept_rejects_foreign_or_missing_receiver_session() {
         handoff_id: id,
         workspace_id: ws,
         project_id: proj,
-        accepting_agent: AgentKind::ClaudeCode,
+        accepting_agent: AgentKind::Other,
         accepting_session: Some(session),
         accepting_user: None,
         owner_filter: OwnerFilter::Any,
         receiving_cwd: None,
     };
 
-    let valid = open_session(&store, ws, proj, AgentKind::ClaudeCode).await;
-    let other_project = open_session(&store, ws, sibling_proj, AgentKind::ClaudeCode).await;
-    let other_workspace = open_session(&store, rival_ws, rival_proj, AgentKind::ClaudeCode).await;
-    let wrong_agent = open_session(&store, ws, proj, AgentKind::Codex).await;
+    let valid = open_session(&store, ws, proj, AgentKind::Other).await;
+    let other_project = open_session(&store, ws, sibling_proj, AgentKind::Other).await;
+    let other_workspace = open_session(&store, rival_ws, rival_proj, AgentKind::Other).await;
+    // Cursor-only reduction: the handoff is accepted by `AgentKind::Other`,
+    // so the still-adversarial "different agent kind" case is a session
+    // opened under `AgentKind::Cursor`.
+    let wrong_agent = open_session(&store, ws, proj, AgentKind::Cursor).await;
     let missing = SessionId::new();
 
     let open = ClaimColumns {
@@ -1133,7 +1136,7 @@ async fn handoff_accept_rejects_foreign_or_missing_receiver_session() {
     assert_eq!(accepted.state, HandoffState::Accepted);
     assert_eq!(
         accepted.accepted_by.as_deref(),
-        Some(AgentKind::ClaudeCode.as_str())
+        Some(AgentKind::Other.as_str())
     );
     assert_eq!(
         accepted.accepted_by_session.as_deref(),
@@ -1148,7 +1151,7 @@ async fn handoff_accept_rejects_foreign_or_missing_receiver_session() {
     // Nobody claims it twice: neither the same receiver retrying nor another
     // matching session (the latter reaches the `state = 'open'` guards rather
     // than the per-receiver early return).
-    let second_match = open_session(&store, ws, proj, AgentKind::ClaudeCode).await;
+    let second_match = open_session(&store, ws, proj, AgentKind::Other).await;
     for (label, receiver) in [
         ("the same receiver retrying", valid),
         ("a second matching session", second_match),
@@ -1178,7 +1181,7 @@ async fn an_owned_handoff_stays_with_its_owner_while_pages_stay_shared() {
         .insert_handoff(NewHandoff {
             workspace_id: ws,
             project_id: proj,
-            from_agent: AgentKind::ClaudeCode,
+            from_agent: AgentKind::Other,
             to_agent: None,
             from_session_id: None,
             summary: "alice's baton".into(),
@@ -1202,8 +1205,8 @@ async fn an_owned_handoff_stays_with_its_owner_while_pages_stay_shared() {
             handoff_id: id,
             workspace_id: ws,
             project_id: proj,
-            accepting_agent: AgentKind::Codex,
-            accepting_session: Some(open_session(&store, ws, proj, AgentKind::Codex).await),
+            accepting_agent: AgentKind::Other,
+            accepting_session: Some(open_session(&store, ws, proj, AgentKind::Other).await),
             accepting_user: Some(operator("carol")),
             owner_filter: carol,
             receiving_cwd: None,
@@ -1215,238 +1218,6 @@ async fn an_owned_handoff_stays_with_its_owner_while_pages_stay_shared() {
         !stolen,
         "carol must not be able to accept a baton owned by {}",
         operator("alice")
-    );
-}
-
-/// Grok reuses one session id across a SessionEnd→restart, so
-/// `accept_handoff` must reopen an already-ended receiver session instead of
-/// rejecting it (#840) — but only *after* the exactly-once claim guard, so the
-/// resurrection can never become a way to steal an already-taken baton.
-#[tokio::test]
-async fn accept_reopens_an_ended_receiver_session_but_keeps_claim_once() {
-    let tmp = tempfile::tempdir().unwrap();
-    let store = Store::open(tmp.path()).unwrap();
-    let (ws, proj) = scope(&store).await;
-
-    let id = store
-        .writer
-        .insert_handoff(NewHandoff {
-            workspace_id: ws,
-            project_id: proj,
-            from_agent: AgentKind::Grok,
-            to_agent: None,
-            from_session_id: None,
-            summary: "resume after restart".into(),
-            next_steps: Vec::new(),
-            open_questions: Vec::new(),
-            files_touched: Vec::new(),
-            cwd: None,
-            owner_user: None,
-        })
-        .await
-        .unwrap();
-
-    let accept = |session: SessionId| HandoffAcceptance {
-        handoff_id: id,
-        workspace_id: ws,
-        project_id: proj,
-        accepting_agent: AgentKind::Grok,
-        accepting_session: Some(session),
-        accepting_user: None,
-        owner_filter: OwnerFilter::Any,
-        receiving_cwd: None,
-    };
-
-    // The same Grok session id: opened, then ended (SessionEnd), then reused
-    // when the conversation restarts and calls its first tool.
-    let grok = open_session(&store, ws, proj, AgentKind::Grok).await;
-    store.writer.end_session(grok, None).await.unwrap();
-
-    let claimed = store.writer.accept_handoff(accept(grok)).await.unwrap();
-    assert!(
-        claimed,
-        "an ended session that reuses its id must be able to accept the handoff"
-    );
-
-    // The receiver row was reopened (ended_at cleared), not left a corpse.
-    let grok_bytes = grok.as_bytes().to_vec();
-    let ended_at: Option<i64> = store
-        .reader
-        .with_conn(move |conn| {
-            Ok(conn.query_row(
-                "SELECT ended_at FROM sessions WHERE id = ?1",
-                rusqlite::params![grok_bytes],
-                |r| r.get(0),
-            )?)
-        })
-        .await
-        .unwrap();
-    assert!(
-        ended_at.is_none(),
-        "accepting a handoff must reopen the ended receiver session"
-    );
-
-    // Claim-once still holds: a *different* session cannot steal the baton the
-    // reopened session already took, even though the loser is wide open.
-    let loser = open_session(&store, ws, proj, AgentKind::Codex).await;
-    let stolen = store
-        .writer
-        .accept_handoff(HandoffAcceptance {
-            handoff_id: id,
-            workspace_id: ws,
-            project_id: proj,
-            accepting_agent: AgentKind::Codex,
-            accepting_session: Some(loser),
-            accepting_user: None,
-            owner_filter: OwnerFilter::Any,
-            receiving_cwd: None,
-        })
-        .await
-        .unwrap();
-    assert!(
-        !stolen,
-        "the resurrection path must not let a second session steal an accepted baton"
-    );
-}
-
-/// Kimi Code reuses its native session id when a session is resumed after
-/// SessionEnd (observed in production 2026-10: one kimi session row carried a
-/// SessionEnd and then fresh session-start/user-prompt observations under the
-/// same id), so it needs the same reopen exemption as Grok — without weakening
-/// any guard around it: other agents stay final-after-end, a receiver in a
-/// different project is still refused, and claim-once still binds the resumed
-/// session.
-#[tokio::test]
-async fn accept_reopens_an_ended_kimi_receiver_but_keeps_every_guard() {
-    let tmp = tempfile::tempdir().unwrap();
-    let store = Store::open(tmp.path()).unwrap();
-    let (ws, proj) = scope(&store).await;
-
-    let new_handoff = |summary: &str| NewHandoff {
-        workspace_id: ws,
-        project_id: proj,
-        from_agent: AgentKind::ClaudeCode,
-        to_agent: None,
-        from_session_id: None,
-        summary: summary.into(),
-        next_steps: Vec::new(),
-        open_questions: Vec::new(),
-        files_touched: Vec::new(),
-        cwd: None,
-        owner_user: None,
-    };
-    let accept = |id, agent: AgentKind, session: SessionId, ws, proj| HandoffAcceptance {
-        handoff_id: id,
-        workspace_id: ws,
-        project_id: proj,
-        accepting_agent: agent,
-        accepting_session: Some(session),
-        accepting_user: None,
-        owner_filter: OwnerFilter::Any,
-        receiving_cwd: None,
-    };
-
-    // Adversarial control: an ended Claude Code session is still final — the
-    // reuse exemption must not leak to agents that never reuse ids.
-    let claude = open_session(&store, ws, proj, AgentKind::ClaudeCode).await;
-    store.writer.end_session(claude, None).await.unwrap();
-    let claude_baton = store
-        .writer
-        .insert_handoff(new_handoff("claude control"))
-        .await
-        .unwrap();
-    let err = store
-        .writer
-        .accept_handoff(accept(
-            claude_baton,
-            AgentKind::ClaudeCode,
-            claude,
-            ws,
-            proj,
-        ))
-        .await
-        .unwrap_err();
-    assert!(
-        matches!(err, StoreError::InvalidState(_)),
-        "an ended claude-code session must still be refused: {err}"
-    );
-
-    // The resumed kimi-code session: ended at SessionEnd, then the same
-    // native id comes back on resume and must be able to take the baton.
-    let kimi = open_session(&store, ws, proj, AgentKind::KimiCode).await;
-    store.writer.end_session(kimi, None).await.unwrap();
-
-    let id = store
-        .writer
-        .insert_handoff(new_handoff("resume after restart"))
-        .await
-        .unwrap();
-    let claimed = store
-        .writer
-        .accept_handoff(accept(id, AgentKind::KimiCode, kimi, ws, proj))
-        .await
-        .unwrap();
-    assert!(
-        claimed,
-        "a resumed kimi-code session must be able to accept the handoff"
-    );
-
-    // The receiver row was reopened (ended_at cleared), not left a corpse.
-    let kimi_bytes = kimi.as_bytes().to_vec();
-    let ended_at: Option<i64> = store
-        .reader
-        .with_conn(move |conn| {
-            Ok(conn.query_row(
-                "SELECT ended_at FROM sessions WHERE id = ?1",
-                rusqlite::params![kimi_bytes],
-                |r| r.get(0),
-            )?)
-        })
-        .await
-        .unwrap();
-    assert!(
-        ended_at.is_none(),
-        "accepting a handoff must reopen the ended kimi-code receiver session"
-    );
-
-    // Claim-once still binds kimi: the same resumed session must not take a
-    // second baton.
-    let second = store
-        .writer
-        .insert_handoff(new_handoff("a second baton"))
-        .await
-        .unwrap();
-    let claimed_again = store
-        .writer
-        .accept_handoff(accept(second, AgentKind::KimiCode, kimi, ws, proj))
-        .await
-        .unwrap();
-    assert!(
-        !claimed_again,
-        "a kimi-code session that already claimed a handoff must not claim another"
-    );
-
-    // Adversarial control: a kimi-code session living in a DIFFERENT project
-    // must not claim this project's baton (scope isolation).
-    let other_proj = store
-        .writer
-        .get_or_create_project(ws, "other-app".to_string(), None)
-        .await
-        .unwrap();
-    let foreign = open_session(&store, ws, other_proj, AgentKind::KimiCode).await;
-    let third = store
-        .writer
-        .insert_handoff(new_handoff("foreign attempt"))
-        .await
-        .unwrap();
-    let err = store
-        .writer
-        .accept_handoff(accept(third, AgentKind::KimiCode, foreign, ws, proj))
-        .await
-        .unwrap_err();
-    assert!(
-        matches!(err, StoreError::InvalidState(_)),
-        "a kimi-code session from another project must be refused: {err}"
     );
 }
 
@@ -1463,7 +1234,7 @@ async fn parallel_live_sessions_keep_their_own_checkpoint_batons() {
         workspace_id: ws,
         project_id: proj,
         from_session_id: Some(session),
-        from_agent: AgentKind::OpenCode,
+        from_agent: AgentKind::Other,
         to_agent: None,
         cwd: Some("/repo".into()),
         summary: summary.into(),
@@ -1472,8 +1243,8 @@ async fn parallel_live_sessions_keep_their_own_checkpoint_batons() {
         files_touched: Vec::new(),
         owner_user: None,
     };
-    let alpha = open_session(&store, ws, proj, AgentKind::OpenCode).await;
-    let beta = open_session(&store, ws, proj, AgentKind::OpenCode).await;
+    let alpha = open_session(&store, ws, proj, AgentKind::Other).await;
+    let beta = open_session(&store, ws, proj, AgentKind::Other).await;
     let alpha_baton = store
         .writer
         .checkpoint_session_handoff(baton(alpha, "alpha"))
@@ -1501,14 +1272,14 @@ async fn parallel_live_sessions_keep_their_own_checkpoint_batons() {
     };
     assert_eq!(state(alpha_baton).await, HandoffState::Open);
 
-    let receiver = open_session(&store, ws, proj, AgentKind::OpenCode).await;
+    let receiver = open_session(&store, ws, proj, AgentKind::Other).await;
     let claimed = store
         .writer
         .accept_handoff(HandoffAcceptance {
             handoff_id: beta_baton,
             workspace_id: ws,
             project_id: proj,
-            accepting_agent: AgentKind::OpenCode,
+            accepting_agent: AgentKind::Other,
             accepting_session: Some(receiver),
             accepting_user: None,
             owner_filter: OwnerFilter::Any,
@@ -1526,7 +1297,7 @@ async fn parallel_live_sessions_keep_their_own_checkpoint_batons() {
     // Once alpha ends, its baton is an ordinary SessionEnd baton again and the
     // same-cwd supersession applies to it.
     store.writer.end_session(alpha, None).await.unwrap();
-    let gamma = open_session(&store, ws, proj, AgentKind::OpenCode).await;
+    let gamma = open_session(&store, ws, proj, AgentKind::Other).await;
     store
         .writer
         .checkpoint_session_handoff(baton(gamma, "gamma"))
@@ -1552,7 +1323,7 @@ async fn startup_claim_rechecks_the_source_and_sweeps_only_quiet_open_batons() {
     let mut batons = Vec::new();
     // Checkpoint order, oldest first: busy, abandoned, quiet.
     for summary in ["busy", "abandoned", "quiet"] {
-        let session = open_session(&store, ws, proj, AgentKind::OpenCode).await;
+        let session = open_session(&store, ws, proj, AgentKind::Other).await;
         store
             .writer
             .insert_observation(Sanitized::new(
@@ -1579,7 +1350,7 @@ async fn startup_claim_rechecks_the_source_and_sweeps_only_quiet_open_batons() {
                 workspace_id: ws,
                 project_id: proj,
                 from_session_id: Some(session),
-                from_agent: AgentKind::OpenCode,
+                from_agent: AgentKind::Other,
                 to_agent: None,
                 cwd: Some("/repo".into()),
                 summary: summary.into(),
@@ -1618,7 +1389,7 @@ async fn startup_claim_rechecks_the_source_and_sweeps_only_quiet_open_batons() {
         handoff_id,
         workspace_id: ws,
         project_id: proj,
-        accepting_agent: AgentKind::OpenCode,
+        accepting_agent: AgentKind::Other,
         accepting_session: Some(receiver),
         accepting_user: None,
         owner_filter: OwnerFilter::Any,
@@ -1638,7 +1409,7 @@ async fn startup_claim_rechecks_the_source_and_sweeps_only_quiet_open_batons() {
     };
 
     // Selected earlier, but its source is in use by the time of the claim.
-    let receiver = open_session(&store, ws, proj, AgentKind::OpenCode).await;
+    let receiver = open_session(&store, ws, proj, AgentKind::Other).await;
     let raced = store
         .writer
         .accept_startup_context(Some(claim(busy, receiver)), None, None, cutoff)
@@ -1647,7 +1418,7 @@ async fn startup_claim_rechecks_the_source_and_sweeps_only_quiet_open_batons() {
     assert!(!raced.handoff_accepted, "a source in use keeps its baton");
     assert_eq!(state(busy).await, HandoffState::Open);
 
-    let receiver = open_session(&store, ws, proj, AgentKind::OpenCode).await;
+    let receiver = open_session(&store, ws, proj, AgentKind::Other).await;
     let delivered = store
         .writer
         .accept_startup_context(Some(claim(quiet, receiver)), None, None, cutoff)
@@ -1681,7 +1452,7 @@ async fn a_session_linked_by_one_managed_run_is_not_another_runs() {
         repo_fingerprint: "repo".into(),
         worktree_fingerprint: "worktree".into(),
         cwd: "/repo".into(),
-        agent: AgentKind::Codex,
+        agent: AgentKind::Other,
         automatic_harness: false,
         available_agents: Vec::new(),
         selection: WorkstreamSelection::New(name.into()),
@@ -1706,7 +1477,7 @@ async fn a_session_linked_by_one_managed_run_is_not_another_runs() {
     assert!(
         store
             .writer
-            .link_managed_run_session(beta.run_id, AgentKind::Codex, "native-beta")
+            .link_managed_run_session(beta.run_id, AgentKind::Other, "native-beta")
             .await
             .unwrap()
     );
@@ -1720,7 +1491,7 @@ async fn a_session_linked_by_one_managed_run_is_not_another_runs() {
     assert!(
         store
             .writer
-            .link_managed_run_session(alpha.run_id, AgentKind::Codex, "native-alpha")
+            .link_managed_run_session(alpha.run_id, AgentKind::Other, "native-alpha")
             .await
             .unwrap()
     );
@@ -1755,7 +1526,7 @@ async fn stale_codex_run_recovery_cannot_cross_project_owner_or_session_boundari
         repo_fingerprint: format!("repo-{project_id}"),
         worktree_fingerprint: format!("worktree-{project_id}"),
         cwd: format!("/repo/{project_id}"),
-        agent: AgentKind::Codex,
+        agent: AgentKind::Other,
         automatic_harness: false,
         available_agents: Vec::new(),
         selection: WorkstreamSelection::New(name.into()),
@@ -1787,7 +1558,7 @@ async fn stale_codex_run_recovery_cannot_cross_project_owner_or_session_boundari
                 workspace_id: ws,
                 project_id,
                 cwd: format!("/repo/{project_id}"),
-                agent: AgentKind::Codex,
+                agent: AgentKind::Other,
                 native_session_id: native.into(),
                 owner_user: owner,
             })
@@ -1805,7 +1576,7 @@ async fn stale_codex_run_recovery_cannot_cross_project_owner_or_session_boundari
                 workspace_id: ws,
                 project_id: proj,
                 cwd: "/repo/a-different-worktree".into(),
-                agent: AgentKind::Codex,
+                agent: AgentKind::Other,
                 native_session_id: "native-other-worktree".into(),
                 owner_user: Some(alice.clone()),
             })
@@ -1861,7 +1632,7 @@ async fn force_unlock_replaces_only_the_same_operators_active_run() {
         repo_fingerprint: "repo".into(),
         worktree_fingerprint: "worktree".into(),
         cwd: "/repo".into(),
-        agent: AgentKind::Codex,
+        agent: AgentKind::Other,
         automatic_harness: false,
         available_agents: Vec::new(),
         selection: WorkstreamSelection::Current,
@@ -1957,7 +1728,7 @@ async fn stale_codex_run_recovery_fails_closed_on_ambiguity_and_active_mismatch(
         repo_fingerprint: format!("repo-{project_id}"),
         worktree_fingerprint: format!("worktree-{project_id}"),
         cwd: format!("/repo/{project_id}"),
-        agent: AgentKind::Codex,
+        agent: AgentKind::Other,
         automatic_harness: false,
         available_agents: Vec::new(),
         selection: WorkstreamSelection::New(name.into()),
@@ -1987,7 +1758,7 @@ async fn stale_codex_run_recovery_fails_closed_on_ambiguity_and_active_mismatch(
                 workspace_id: ws,
                 project_id: proj,
                 cwd: format!("/repo/{proj}"),
-                agent: AgentKind::Codex,
+                agent: AgentKind::Other,
                 native_session_id: "native-ambiguous".into(),
                 owner_user: Some(owner.clone()),
             })
@@ -2003,7 +1774,7 @@ async fn stale_codex_run_recovery_fails_closed_on_ambiguity_and_active_mismatch(
                 workspace_id: ws,
                 project_id: other_proj,
                 cwd: format!("/repo/{other_proj}"),
-                agent: AgentKind::Codex,
+                agent: AgentKind::Other,
                 native_session_id: "native-cross-project".into(),
                 owner_user: Some(owner.clone()),
             })
@@ -2020,7 +1791,7 @@ async fn stale_codex_run_recovery_fails_closed_on_ambiguity_and_active_mismatch(
                 workspace_id: ws,
                 project_id: other_proj,
                 cwd: format!("/repo/{other_proj}"),
-                agent: AgentKind::Codex,
+                agent: AgentKind::Other,
                 native_session_id: "native-control".into(),
                 owner_user: Some(owner),
             })
@@ -2067,7 +1838,7 @@ fn finish_input(run_id: ai_memory_core::ManagedRunId) -> ai_memory_store::Finish
         source_cursor: Some("cursor-finish".into()),
         events: vec![ai_memory_core::NewWorkstreamEvent {
             event_id: "finish-event".into(),
-            agent: AgentKind::Codex,
+            agent: AgentKind::Other,
             native_session_id: "native-finish".into(),
             source_record_id: Some("record-finish".into()),
             kind: ai_memory_core::WorkstreamEventKind::Message,
@@ -2190,7 +1961,7 @@ impl FinishFixture {
                     repo_fingerprint: "repo-finish".into(),
                     worktree_fingerprint: "tree-finish".into(),
                     cwd: "/repo".into(),
-                    agent: AgentKind::Codex,
+                    agent: AgentKind::Other,
                     automatic_harness: false,
                     available_agents: Vec::new(),
                     selection: WorkstreamSelection::New(name.into()),
@@ -2623,7 +2394,7 @@ async fn owner_finish_store_raw_ids_use_the_actual_project_and_workspace() {
                     repo_fingerprint: "foreign".into(),
                     worktree_fingerprint: "foreign".into(),
                     cwd: "/repo".into(),
-                    agent: AgentKind::Codex,
+                    agent: AgentKind::Other,
                     automatic_harness: false,
                     available_agents: Vec::new(),
                     selection: WorkstreamSelection::Current,
@@ -2680,7 +2451,7 @@ async fn owner_finish_store_topology_reload_and_phase_controls() {
             repo_fingerprint: "reload".into(),
             worktree_fingerprint: "reload".into(),
             cwd: "/repo".into(),
-            agent: AgentKind::Codex,
+            agent: AgentKind::Other,
             automatic_harness: false,
             available_agents: Vec::new(),
             selection: WorkstreamSelection::Current,
@@ -2805,7 +2576,7 @@ async fn owner_finish_store_topology_reload_and_phase_controls() {
                 repo_fingerprint: "recoverable".into(),
                 worktree_fingerprint: "recoverable".into(),
                 cwd: "/repo".into(),
-                agent: AgentKind::Codex,
+                agent: AgentKind::Other,
                 automatic_harness: false,
                 available_agents: Vec::new(),
                 selection: WorkstreamSelection::New("recoverable".into()),
@@ -2881,7 +2652,7 @@ async fn owner_finish_store_topology_reload_and_phase_controls() {
                 repo_fingerprint: "reload".into(),
                 worktree_fingerprint: "reload".into(),
                 cwd: "/repo".into(),
-                agent: AgentKind::Codex,
+                agent: AgentKind::Other,
                 automatic_harness: false,
                 available_agents: Vec::new(),
                 selection: WorkstreamSelection::Current,
@@ -2903,7 +2674,7 @@ async fn owner_finish_store_topology_reload_and_phase_controls() {
                     repo_fingerprint: "reload".into(),
                     worktree_fingerprint: "reload".into(),
                     cwd: "/repo".into(),
-                    agent: AgentKind::Codex,
+                    agent: AgentKind::Other,
                     automatic_harness: false,
                     available_agents: Vec::new(),
                     selection: WorkstreamSelection::Current,
@@ -3144,7 +2915,7 @@ async fn native_identity_store_link_refuses_original_dirty_bytes() {
         let result = f
             .store
             .writer
-            .link_managed_run_session(run.run_id, AgentKind::Codex, id)
+            .link_managed_run_session(run.run_id, AgentKind::Other, id)
             .await;
         assert!(
             matches!(result, Err(_) | Ok(false)),
@@ -3157,7 +2928,7 @@ async fn native_identity_store_link_refuses_original_dirty_bytes() {
     assert!(
         f.store
             .writer
-            .link_managed_run_session(run.run_id, AgentKind::Codex, exact.clone())
+            .link_managed_run_session(run.run_id, AgentKind::Other, exact.clone())
             .await
             .unwrap()
     );
@@ -3182,7 +2953,7 @@ async fn native_identity_store_adoption_refuses_before_link() {
         workspace_id: f.ws,
         project_id: f.project,
         cwd: "/repo".into(),
-        agent: AgentKind::Codex,
+        agent: AgentKind::Other,
         native_session_id: id.into(),
         owner_user: Some(operator("alice")),
     };
@@ -3566,7 +3337,7 @@ async fn another_operators_observations_lift_their_session_page_in_a_shared_proj
             id: sid,
             workspace_id: ws,
             project_id: proj,
-            agent_kind: AgentKind::Codex,
+            agent_kind: AgentKind::Other,
             cwd: Some("/repo".into()),
             actor_user: Some(operator("operator-b")),
         })
@@ -3618,7 +3389,7 @@ async fn owned_session(
             id,
             workspace_id: ws,
             project_id: proj,
-            agent_kind: AgentKind::Codex,
+            agent_kind: AgentKind::Other,
             cwd: Some("/repo".into()),
             actor_user: owner,
         })
@@ -3801,7 +3572,7 @@ async fn owned_session_purge_refuses_foreign_shared_and_wrong_scope_sessions() {
                 id: sid,
                 workspace_id: ws,
                 project_id: proj,
-                agent_kind: AgentKind::Codex,
+                agent_kind: AgentKind::Other,
                 cwd: None,
                 actor_user: owner.map(str::to_string),
             })
@@ -3951,7 +3722,7 @@ async fn owned_session_purge_refuses_cross_project_cascades_with_admin_control()
             id: sid,
             workspace_id: ws,
             project_id: proj,
-            agent_kind: AgentKind::Codex,
+            agent_kind: AgentKind::Other,
             cwd: None,
             actor_user: Some("user:cascade-alice".into()),
         })

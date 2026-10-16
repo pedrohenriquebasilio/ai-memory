@@ -9416,26 +9416,6 @@ command = "AI_MEMORY_HOOK_URL=http://h AI_MEMORY_PROJECT_STRATEGY=repo-root /x/a
     }
 
     #[test]
-    fn resolve_hooks_dir_uses_grok_bundle_for_grok() {
-        let tmp = TempDir::new().unwrap();
-        fs::create_dir_all(tmp.path().join("grok")).unwrap();
-        fs::create_dir_all(tmp.path().join("claude-code")).unwrap();
-
-        let resolved = resolve_hooks_dir(Some(tmp.path()), AgentChoice::Grok, tmp.path()).unwrap();
-        assert_eq!(resolved, tmp.path().join("grok"));
-    }
-
-    #[test]
-    fn resolve_hooks_dir_uses_pool_bundle_for_pool() {
-        let tmp = TempDir::new().unwrap();
-        fs::create_dir_all(tmp.path().join("pool")).unwrap();
-        fs::create_dir_all(tmp.path().join("claude-code")).unwrap();
-
-        let resolved = resolve_hooks_dir(Some(tmp.path()), AgentChoice::Pool, tmp.path()).unwrap();
-        assert_eq!(resolved, tmp.path().join("pool"));
-    }
-
-    #[test]
     fn pool_settings_yaml_covers_all_events_with_bounded_entries() {
         let snippet = super::super::render_shared::build_pool_settings_yaml_with_data_dir(
             Path::new("/staging/pool"),
@@ -9968,16 +9948,6 @@ command = "AI_MEMORY_HOOK_URL=http://h AI_MEMORY_PROJECT_STRATEGY=repo-root /x/a
         let root: serde_json::Value =
             serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(root["hooks"]["maxOutputBytes"], serde_json::json!(4096));
-    }
-
-    #[test]
-    fn resolve_hooks_dir_uses_devin_bundle_for_devin() {
-        let tmp = TempDir::new().unwrap();
-        fs::create_dir_all(tmp.path().join("devin")).unwrap();
-        fs::create_dir_all(tmp.path().join("claude-code")).unwrap();
-
-        let resolved = resolve_hooks_dir(Some(tmp.path()), AgentChoice::Devin, tmp.path()).unwrap();
-        assert_eq!(resolved, tmp.path().join("devin"));
     }
 
     #[test]

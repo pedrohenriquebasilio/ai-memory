@@ -9613,11 +9613,11 @@ mod tests {
             .await
             .unwrap();
         for (project_id, agent) in [
-            (target, AgentKind::ClaudeCode),
-            (target, AgentKind::ClaudeCode),
+            (target, AgentKind::Other),
+            (target, AgentKind::Other),
             (target, AgentKind::Cursor),
             // A different scope must not leak into the target's totals.
-            (other_project, AgentKind::Codex),
+            (other_project, AgentKind::Other),
         ] {
             store
                 .writer
@@ -9633,7 +9633,7 @@ mod tests {
                 .await
                 .unwrap();
         }
-        for (agent, owner) in [(AgentKind::ClaudeCode, "alice"), (AgentKind::Codex, "bob")] {
+        for (agent, owner) in [(AgentKind::Other, "alice"), (AgentKind::Other, "bob")] {
             store
                 .writer
                 .begin_session(NewSession {
@@ -9690,7 +9690,7 @@ mod tests {
         assert_eq!(
             json["by_agent"],
             serde_json::json!([
-                { "agent": "claude-code", "sessions": 2, "mixed_capture_sessions": 0 },
+                { "agent": "other", "sessions": 2, "mixed_capture_sessions": 0 },
                 { "agent": "cursor", "sessions": 1, "mixed_capture_sessions": 0 },
             ]),
             "counts are per agent, scoped, count-desc: {json}"
@@ -9718,7 +9718,7 @@ mod tests {
         assert_eq!(
             json["by_agent"],
             serde_json::json!([
-                { "agent": "claude-code", "sessions": 3, "mixed_capture_sessions": 0 },
+                { "agent": "other", "sessions": 3, "mixed_capture_sessions": 0 },
                 { "agent": "cursor", "sessions": 1, "mixed_capture_sessions": 0 },
             ]),
             "named callers see own plus shared sessions only: {json}"
@@ -9746,8 +9746,7 @@ mod tests {
         assert_eq!(
             json["by_agent"],
             serde_json::json!([
-                { "agent": "claude-code", "sessions": 3, "mixed_capture_sessions": 0 },
-                { "agent": "codex", "sessions": 1, "mixed_capture_sessions": 0 },
+                { "agent": "other", "sessions": 4, "mixed_capture_sessions": 0 },
                 { "agent": "cursor", "sessions": 1, "mixed_capture_sessions": 0 },
             ]),
             "all_owners includes every operator: {json}"
@@ -9851,11 +9850,11 @@ mod tests {
         let alice = SessionId::new();
         let bob = SessionId::new();
         for (id, project_id, agent) in [
-            (older, target, AgentKind::Codex),
-            (other_agent, target, AgentKind::ClaudeCode),
-            (other_scope, other_project, AgentKind::Codex),
-            (ended, target, AgentKind::Codex),
-            (latest, target, AgentKind::Codex),
+            (older, target, AgentKind::Other),
+            (other_agent, target, AgentKind::Other),
+            (other_scope, other_project, AgentKind::Other),
+            (ended, target, AgentKind::Other),
+            (latest, target, AgentKind::Other),
         ] {
             store
                 .writer
@@ -9880,7 +9879,7 @@ mod tests {
                     id,
                     workspace_id: ws,
                     project_id: target,
-                    agent_kind: AgentKind::Codex,
+                    agent_kind: AgentKind::Other,
                     cwd: Some(std::path::PathBuf::from("/tmp/target")),
                     actor_user: Some(IdentityKey::User(user.into()).storage_key()),
                 })
@@ -9918,7 +9917,7 @@ mod tests {
             .clone()
             .oneshot(
                 Request::builder()
-                    .uri("/admin/open-sessions?workspace=default&project=target&agent=codex")
+                    .uri("/admin/open-sessions?workspace=default&project=target&agent=other")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -9938,7 +9937,7 @@ mod tests {
             .clone()
             .oneshot(
                 Request::builder()
-                    .uri("/admin/open-sessions?workspace=default&project=target&agent=codex&all=true")
+                    .uri("/admin/open-sessions?workspace=default&project=target&agent=other&all=true")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -9948,7 +9947,10 @@ mod tests {
         let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
         let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
         let sessions = json["sessions"].as_array().unwrap();
-        assert_eq!(sessions.len(), 2);
+        // Cursor-only reduction: `claude-code` and `codex` legacy fixtures
+        // all land under `AgentKind::Other` now, so an `agent=other` scan
+        // returns both of them plus the native `other` row.
+        assert_eq!(sessions.len(), 3);
         let ids: Vec<&str> = sessions
             .iter()
             .map(|s| s["session_id"].as_str().unwrap())
@@ -9963,7 +9965,7 @@ mod tests {
             .clone()
             .oneshot(
                 Request::builder()
-                    .uri("/admin/open-sessions?workspace=default&project=target&agent=codex&all=true")
+                    .uri("/admin/open-sessions?workspace=default&project=target&agent=other&all=true")
                     .extension(ActorContext {
                         user: Some("alice".into()),
                         ..ActorContext::default()
@@ -10004,7 +10006,7 @@ mod tests {
         let resp = router
             .oneshot(
                 Request::builder()
-                    .uri("/admin/open-sessions?workspace=default&project=ghost&agent=codex")
+                    .uri("/admin/open-sessions?workspace=default&project=ghost&agent=other")
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -10058,15 +10060,17 @@ mod tests {
         let bobs_session = SessionId::new();
         let wrong_agent = SessionId::new();
         for (id, project_id, agent_kind, actor_user) in [
-            (older, target, AgentKind::KiroCli, None),
-            (latest, target, AgentKind::KiroCli, None),
-            (other_scope, other_project, AgentKind::KiroCli, None),
-            (ended, target, AgentKind::KiroCli, None),
-            (wrong_agent, target, AgentKind::Codex, None),
+            (older, target, AgentKind::Other, None),
+            (latest, target, AgentKind::Other, None),
+            (other_scope, other_project, AgentKind::Other, None),
+            (ended, target, AgentKind::Other, None),
+            // Cursor-only reduction: the "wrong agent" row keeps the agent
+            // boundary visible by using the other remaining AgentKind variant.
+            (wrong_agent, target, AgentKind::Cursor, None),
             (
                 bobs_session,
                 target,
-                AgentKind::KiroCli,
+                AgentKind::Other,
                 Some(IdentityKey::User("bob".into()).storage_key()),
             ),
         ] {
@@ -10117,7 +10121,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .uri(format!(
-                        "/admin/open-sessions?workspace=default&project=target&agent=kiro-cli&session_id={older}"
+                        "/admin/open-sessions?workspace=default&project=target&agent=other&session_id={older}"
                     ))
                     .body(Body::empty())
                     .unwrap(),
@@ -10138,7 +10142,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .uri(format!(
-                        "/admin/open-sessions?workspace=default&project=target&agent=kiro-cli&session_id={other_scope}"
+                        "/admin/open-sessions?workspace=default&project=target&agent=other&session_id={other_scope}"
                     ))
                     .body(Body::empty())
                     .unwrap(),
@@ -10160,7 +10164,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .uri(format!(
-                        "/admin/open-sessions?workspace=default&project=target&agent=kiro-cli&session_id={ended}"
+                        "/admin/open-sessions?workspace=default&project=target&agent=other&session_id={ended}"
                     ))
                     .body(Body::empty())
                     .unwrap(),
@@ -10180,7 +10184,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .uri(format!(
-                        "/admin/open-sessions?workspace=default&project=target&agent=kiro-cli&session_id={ended}&include_ended=true"
+                        "/admin/open-sessions?workspace=default&project=target&agent=other&session_id={ended}&include_ended=true"
                     ))
                     .body(Body::empty())
                     .unwrap(),
@@ -10201,7 +10205,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .uri(
-                        "/admin/open-sessions?workspace=default&project=target&agent=kiro-cli&include_ended=true",
+                        "/admin/open-sessions?workspace=default&project=target&agent=other&include_ended=true",
                     )
                     .body(Body::empty())
                     .unwrap(),
@@ -10220,7 +10224,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .uri(format!(
-                        "/admin/open-sessions?workspace=default&project=target&agent=kiro-cli&session_id={wrong_agent}"
+                        "/admin/open-sessions?workspace=default&project=target&agent=other&session_id={wrong_agent}"
                     ))
                     .body(Body::empty())
                     .unwrap(),
@@ -10240,7 +10244,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .uri(format!(
-                        "/admin/open-sessions?workspace=default&project=target&agent=kiro-cli&session_id={bobs_session}"
+                        "/admin/open-sessions?workspace=default&project=target&agent=other&session_id={bobs_session}"
                     ))
                     .body(Body::empty())
                     .unwrap(),
@@ -10262,7 +10266,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .uri(format!(
-                        "/admin/open-sessions?workspace=default&project=target&agent=kiro-cli&session_id={bobs_session}&all_owners=true"
+                        "/admin/open-sessions?workspace=default&project=target&agent=other&session_id={bobs_session}&all_owners=true"
                     ))
                     .body(Body::empty())
                     .unwrap(),
@@ -10281,7 +10285,7 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .uri(format!(
-                        "/admin/open-sessions?workspace=default&project=target&agent=kiro-cli&all=true&session_id={older}"
+                        "/admin/open-sessions?workspace=default&project=target&agent=other&all=true&session_id={older}"
                     ))
                     .body(Body::empty())
                     .unwrap(),
@@ -10295,7 +10299,7 @@ mod tests {
         let resp = router
             .oneshot(
                 Request::builder()
-                    .uri("/admin/open-sessions?workspace=default&project=target&agent=kiro-cli&session_id=not-a-uuid")
+                    .uri("/admin/open-sessions?workspace=default&project=target&agent=other&session_id=not-a-uuid")
                     .body(Body::empty())
                     .unwrap(),
             )

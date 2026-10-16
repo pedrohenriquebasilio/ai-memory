@@ -155,30 +155,8 @@ fn humanize_age(raw: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use ai_memory_core::{AgentKind, WorkstreamId};
 
     use super::*;
-
-    #[test]
-    fn human_output_marks_current_and_lists_harnesses() {
-        let rows = vec![ManagedWorkstreamSummary {
-            workstream_id: WorkstreamId::new(),
-            name: "decide-after-death".into(),
-            created_at: jiff::Timestamp::now().to_string(),
-            last_active_at: jiff::Timestamp::now().to_string(),
-            current: true,
-            linked_harnesses: vec![AgentKind::OpenCode, AgentKind::Codex],
-        }];
-
-        let rendered = render_human(&rows, "default", "game");
-        assert!(rendered.contains("Managed workstreams for default/game:"));
-        assert!(rendered.contains("* decide-after-death"));
-        // The id line is indented past the marker column so it cannot be
-        // misread as a second, unmarked workstream.
-        assert!(rendered.contains("\n    id: "));
-        assert!(rendered.contains("[open-code, codex]"));
-        assert!(rendered.contains(&rows[0].workstream_id.to_string()));
-    }
 
     #[test]
     fn human_output_explains_an_empty_checkout() {

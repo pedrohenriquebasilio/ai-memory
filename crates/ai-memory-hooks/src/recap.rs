@@ -841,7 +841,7 @@ mod tests {
                     id: session_id,
                     workspace_id: state.workspace_id,
                     project_id: state.project_id,
-                    agent_kind: AgentKind::ClaudeCode,
+                    agent_kind: AgentKind::Other,
                     cwd: None,
                     actor_user: owner
                         .map(|name| ai_memory_core::IdentityKey::User(name.into()).storage_key()),
@@ -922,7 +922,7 @@ mod tests {
                     workspace_id: state.workspace_id,
                     project_id: state.project_id,
                     from_session_id: None,
-                    from_agent: AgentKind::ClaudeCode,
+                    from_agent: AgentKind::Other,
                     to_agent: None,
                     cwd: None,
                     summary: summary.into(),

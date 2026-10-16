@@ -11,6 +11,45 @@ version in [`docs/changelog/`](docs/changelog/):
 
 ## [Unreleased]
 
+### Removed
+- Removed the hook bundles for non-Cursor coding harnesses: Antigravity CLI,
+  Claude Code, Codex, Command Code, Copilot CLI, Devin, Gemini CLI, Grok,
+  Kimi Code, Kiro CLI, OpenCode, and Pool. Only `hooks/cursor/` ships now, as
+  Phase 1 of the Cursor Desktop-only reduction (`docs/cursor-only-plan.md`).
+  Downstream dispatcher removal in `install_hooks.rs`, `install_mcp.rs`,
+  `setup.rs`, and `run.rs` remains pending in later phases of that plan.
+  (#1)
+- Removed the Claude Code and Codex marketplace plugin catalogs
+  (`plugins/claude-code/`, `plugins/codex/`, `plugins/README.md`,
+  `.claude-plugin/marketplace.json`, `.agents/plugins/marketplace.json`), the
+  embedded plugin templates under
+  `crates/ai-memory-cli/templates/plugin/`, the hidden `render-plugins`
+  CLI entry point (`Command::RenderPlugins`, `RenderPluginsArgs`,
+  `commands/render_plugins.rs`), and the plugins drift test
+  (`crates/ai-memory-cli/tests/suite/plugins.rs`). `bin/release` no longer
+  invokes the renderer. (#1)
+- Removed the harness-matrix documentation
+  (`docs/support-matrix.md`, `docs/managed-harness-contributions.md`,
+  `docs/mcp-install.md`) and the per-harness desktop research pages
+  (`docs/desktop/{antigravity,chatgpt-desktop,claude-desktop,codex-desktop,
+  grok-desktop,zed,desktop-landscape,installer-and-coexistence,plan,
+  verification-2026-10,extensions,capture-and-dedup}.md`).
+  `docs/desktop/cursor.md` stays. (#1)
+- Removed the Kiro v3 lifecycle fixture
+  (`crates/ai-memory-cli/tests/fixtures/kiro-v3-hook-payloads.json`) and its
+  owning unit test, the Grok SessionStart assertion in the MCP server
+  tests, and the harness-specific smoke tests
+  (`tests/e2e/claude_plugin_smoke.py`, `tests/e2e/codex_plugin_smoke.py`,
+  `tests/hooks/test_plugin_launcher.sh`, `tests/hooks/test_grok_ps.ps1`).
+  (#1)
+
+### Changed
+- Marked the lib and integration tests whose fixtures depend on the deleted
+  non-Cursor hook bundles with `#[ignore]`, pointing at Phase 3 of
+  `docs/cursor-only-plan.md`. The large `install_hooks.rs`, `run.rs`,
+  `run_autowire.rs`, and `upgrade.rs` dispatchers stay compiling until that
+  phase collapses them. (#1)
+
 ## [3.1.0] - 2026-10-16
 
 ### Added

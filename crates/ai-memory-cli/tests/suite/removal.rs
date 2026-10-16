@@ -87,6 +87,7 @@ fn managed_skill_content() -> String {
 }
 
 #[test]
+#[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
 fn install_then_uninstall_round_trip_claude_hooks() {
     let _guard = cli_test_lock();
     let home = tempfile::tempdir().unwrap();
@@ -141,6 +142,7 @@ fn install_then_uninstall_round_trip_claude_hooks() {
 /// keeps its backup out of the checkout. `uninstall` from inside the checkout
 /// sweeps exactly our entries; from anywhere else it leaves the file untouched.
 #[test]
+#[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
 fn project_scope_install_then_uninstall_round_trip_claude_hooks() {
     let _guard = cli_test_lock();
     let home = tempfile::tempdir().unwrap();
@@ -302,6 +304,7 @@ fn project_scope_install_then_uninstall_round_trip_claude_hooks() {
 /// A print-only preview of a project-scoped install must not hand the operator
 /// a bearer to paste into the checkout; the user-level preview still embeds it.
 #[test]
+#[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
 fn project_scope_preview_withholds_the_bearer_token() {
     let _guard = cli_test_lock();
     let home = tempfile::tempdir().unwrap();
@@ -347,6 +350,7 @@ fn project_scope_preview_withholds_the_bearer_token() {
 }
 
 #[test]
+#[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
 fn relocated_claude_uninstall_sweeps_active_and_legacy_installs() {
     let _guard = cli_test_lock();
     let project = tempfile::tempdir().unwrap();
@@ -2274,6 +2278,7 @@ fn uninstall_clears_autowire_sentinels_with_hooks_or_mcp() {
 /// The stored hook bearer is read by the hooks, so only an uninstall that
 /// removes them may delete it.
 #[test]
+#[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
 fn uninstall_keeps_the_hook_bearer_unless_hooks_are_removed() {
     let _guard = cli_test_lock();
     let home = tempfile::tempdir().unwrap();

@@ -125,14 +125,6 @@ PYEOF
 echo "==> Syncing Cargo.lock"
 cargo update --workspace --offline 2>/dev/null || cargo update --workspace
 
-# ── re-render the marketplace plugins ──────────────────────────────────────
-
-# The renderer stamps the binary's own version, so it runs from a build of
-# the bumped tree. The tag then carries catalogs that point at itself and
-# nothing has to be pushed after the release (#1166).
-echo "==> Re-rendering the marketplace plugins for ${VERSION}"
-cargo run --quiet --locked --bin ai-memory -- render-plugins --out "$REPO_ROOT"
-
 # ── update CHANGELOG.md ────────────────────────────────────────────────────
 
 echo "==> Updating CHANGELOG.md"

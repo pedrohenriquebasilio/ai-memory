@@ -491,6 +491,7 @@ mod slow {
     /// harnesses and running `auth enable` twice leaves the token in no
     /// harness config and no command line.
     #[tokio::test]
+    #[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
     async fn a_fresh_install_requires_the_token_and_its_own_clients_still_work() {
         let install = Install::new();
         install.run_ok(&["init"], None);
@@ -839,6 +840,7 @@ mod slow {
     /// credential. And a server whose configured token file is gone refuses to
     /// start instead of serving open.
     #[test]
+    #[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
     fn uninstall_keeps_the_root_bearer_and_a_missing_one_stops_the_server() {
         let install = Install::new();
         install.run_ok(&["init"], None);

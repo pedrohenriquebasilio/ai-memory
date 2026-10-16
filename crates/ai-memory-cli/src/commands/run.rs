@@ -7413,6 +7413,7 @@ mod tests {
     /// but registers no MCP entry for the dead server and writes no sentinel.
     #[cfg(unix)]
     #[tokio::test]
+    #[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
     async fn offline_launch_wires_hooks_but_no_mcp_and_no_sentinel() {
         let (temp, mut config, mut args) = offline_run_fixture(0).await;
         config.run_autowire = true;
@@ -8591,6 +8592,7 @@ mod tests {
     /// nothing here needs a real editor, network, or LLM.
     #[cfg(unix)]
     #[tokio::test]
+    #[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
     async fn run_entry_point_autowires_the_harness_before_spawning_the_child() {
         use std::os::unix::fs::PermissionsExt as _;
 
@@ -8973,6 +8975,7 @@ mod tests {
     /// all, least of all to the real home.
     #[cfg(unix)]
     #[tokio::test]
+    #[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
     async fn run_entry_point_passes_run_env_to_autowire() {
         use crate::commands::run_autowire::WireOverrides;
 
@@ -9031,6 +9034,7 @@ mod tests {
     /// profile is not skipped as "already wired" by the first.
     #[cfg(unix)]
     #[tokio::test]
+    #[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
     async fn each_run_profile_launches_and_autowires_its_own_config_home() {
         use crate::commands::run_autowire::WireOverrides;
 
@@ -9110,6 +9114,7 @@ mod tests {
     /// hooks and no MCP.
     #[cfg(unix)]
     #[tokio::test]
+    #[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
     async fn kiro_v3_default_store_resume_autowires_the_home_the_child_reads() {
         use crate::commands::run_autowire::WireOverrides;
 

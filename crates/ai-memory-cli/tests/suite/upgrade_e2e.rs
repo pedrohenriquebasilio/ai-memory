@@ -225,6 +225,7 @@ mod slow {
     }
 
     #[tokio::test]
+    #[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
     async fn native_upgrade_replaces_binary_and_sibling_hooks_from_fixture() {
         let asset = host_asset_name().to_string();
         let archive = Arc::new(build_release_archive());
@@ -301,6 +302,7 @@ mod slow {
 
     #[cfg(target_os = "linux")]
     #[tokio::test]
+    #[ignore = "non-Cursor harness coverage; dispatcher removal pending in Phase 3 of docs/cursor-only-plan.md"]
     async fn native_upgrade_refreshes_hooks_without_a_deleted_path_or_losing_cli_data_dir() {
         let asset = host_asset_name().to_string();
         let archive = Arc::new(build_release_archive());

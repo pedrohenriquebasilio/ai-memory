@@ -61,8 +61,6 @@ pub async fn run() -> Result<()> {
         // step), and tracing must not get the chance to interleave anything
         // into the script on stdout.
         Command::Completions(args) => return commands::completions::run(args),
-        // Pure rendering of embedded templates: no config, no data dir.
-        Command::RenderPlugins(args) => return commands::render_plugins::run(args),
         other => other,
     };
 
@@ -198,7 +196,5 @@ pub async fn run() -> Result<()> {
         Command::Server(args) => commands::server::run(&config, args),
         // `Completions` is handled in the fast-path above (before config/tracing).
         Command::Completions(args) => commands::completions::run(args),
-        // `RenderPlugins` is handled in the fast-path above.
-        Command::RenderPlugins(args) => commands::render_plugins::run(args),
     }
 }
